@@ -12,6 +12,7 @@ find_package(nav2_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(controller_manager_msgs REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 
@@ -25,6 +26,7 @@ add_library(g1_bt_nodes
   src/skills/approach_object.cpp
   src/skills/arm_authority_leaves.cpp
   src/skills/clear_costmaps.cpp
+  src/skills/clear_octomap.cpp
   src/skills/navigate_to_pose.cpp
   src/skills/pick.cpp
   src/skills/place.cpp
@@ -38,7 +40,7 @@ target_include_directories(g1_bt_nodes PUBLIC
 target_compile_features(g1_bt_nodes PUBLIC cxx_std_20)
 ament_target_dependencies(g1_bt_nodes PUBLIC
   rclcpp rclcpp_action behaviortree_cpp g1_msgs nav2_msgs geometry_msgs
-  controller_manager_msgs lifecycle_msgs tf2 tf2_geometry_msgs)
+  controller_manager_msgs lifecycle_msgs std_srvs tf2 tf2_geometry_msgs)
 
 add_executable(g1_bt_executor src/g1_bt_executor_main.cpp)
 target_link_libraries(g1_bt_executor PUBLIC g1_bt_nodes)
@@ -111,6 +113,23 @@ if(BUILD_TESTING)
   else()
     message(WARNING
       "clang-format and/or workspace .clang-format not found; skipping clang_format_check_g1_orchestration test")
+  endif()
+
+  # clang-tidy over this package's own translation units, gated by WarningsAsErrors in the
+  # workspace .clang-tidy. Minutes rather than the format check's milliseconds, so it carries a
+  # label: `--ctest-args -LE clang_tidy` skips it for a fast local loop. CI runs it.
+  find_program(RUN_CLANG_TIDY_EXECUTABLE NAMES run-clang-tidy-14 run-clang-tidy)
+  set(_clang_tidy_config "${CMAKE_CURRENT_SOURCE_DIR}/../../.clang-tidy")
+  if(RUN_CLANG_TIDY_EXECUTABLE AND EXISTS "${_clang_tidy_config}"
+      AND CMAKE_EXPORT_COMPILE_COMMANDS)
+    add_test(
+      NAME clang_tidy_check_g1_orchestration
+      COMMAND ${RUN_CLANG_TIDY_EXECUTABLE} -p ${CMAKE_BINARY_DIR} -quiet -j 4
+    )
+    set_tests_properties(clang_tidy_check_g1_orchestration PROPERTIES LABELS clang_tidy TIMEOUT 900)
+  else()
+    message(WARNING
+      "run-clang-tidy or .clang-tidy not found, or compile commands are off; skipping clang_tidy_check_g1_orchestration test")
   endif()
 endif()
 
