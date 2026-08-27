@@ -11,6 +11,11 @@ The reader is assumed to know basic Python and the main ROS 2 concepts: nodes, t
 TF, launch files, and controllers. No previous experience with reinforcement learning or ONNX is
 required.
 
+For a derivation-focused treatment, use the companion chapter
+[The Mathematics Behind the G1 Locomotion Policy](DEEP_LEARNING_MATHEMATICS.md). It collects and
+explains the neural-network, backpropagation, Adam, Gaussian policy, value, GAE, PPO, reward,
+quaternion, PD-control, safety, and evaluation equations used to understand this system.
+
 > **Scope and evidence:** this repository contains NVIDIA's deployed WBC-AGILE policy artifact,
 > its tensor descriptor, and the C++ inference and safety integration. It does not contain the
 > original training environment, reward implementation, or optimizer configuration. This chapter
