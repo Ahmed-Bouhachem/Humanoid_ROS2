@@ -2,7 +2,7 @@ Let the SDK honour CYCLONEDDS_URI instead of building its own config
 
 With a non-empty `interface`, unitree_sdk2's ChannelFactory::Init builds an inline
 CycloneDDS config for that interface and creates the domain with it. That inline config
-replaces CYCLONEDDS_URI wholesale, so the container's /etc/cyclonedds/cyclonedds.xml never
+replaces CYCLONEDDS_URI wholesale, so the project's config/cyclonedds.xml never
 applies to the simulator -- including its MaxAutoParticipantIndex of 60. The simulator
 therefore fell back to Cyclone's default of 9.
 
@@ -17,15 +17,14 @@ It is a race, so it looks intermittent: the spawners are short-lived and usually
 before the simulator reaches DDS init.
 
 Leaving `interface` empty makes the SDK create the domain with the default config, which
-reads CYCLONEDDS_URI. The container's file pins the same `lo` interface, so the network
+reads CYCLONEDDS_URI. The project's file pins the same `lo` interface, so the network
 behaviour is unchanged and only the index ceiling moves.
 
-What guarantees CYCLONEDDS_URI is present is `ENV CYCLONEDDS_URI` in .devcontainer/
-Dockerfile, set at image level, so it also covers running the simulator by hand outside
-sim.launch.py -- which is how the DDS failure was isolated in the first place. The launch
+What guarantees CYCLONEDDS_URI is present is `scripts/native-env.sh`, which exports it for
+both the launch system and a simulator started by hand. The launch
 file additionally checks that the URI names a file that exists, because CycloneDDS treats
-an unreadable URI as a stderr warning and falls back to defaults; with the compose file's
-network_mode: host that would bind the real NIC instead of lo and put rt/lowcmd on the
+an unreadable URI as a stderr warning and falls back to defaults; that could bind the real
+NIC instead of lo and put rt/lowcmd on the
 LAN. Removing the code-level `interface: "lo"` fence is only safe with that check in
 place.
 

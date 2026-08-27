@@ -152,8 +152,8 @@ The full mission wants `mode:=localization nav:=true world:=navigation` instead.
 
 ## Groot2
 
-Groot2 runs on the **host**, not in the container. The container uses host networking, so the
-editor reaches the executor at `localhost:1667`.
+Groot2 runs as a separate desktop application and reaches the native executor at
+`localhost:1667`.
 
 **To watch a run:** start the mission, then choose Monitor and connect to `localhost:1667`. The
 publisher only exists while a tree is running.

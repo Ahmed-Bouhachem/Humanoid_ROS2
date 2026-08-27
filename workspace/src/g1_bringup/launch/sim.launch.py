@@ -32,7 +32,8 @@ BRINGUP_SHARE = get_package_share_directory("g1_bringup")
 STATE_SHARE = get_package_share_directory("g1_state_estimation")
 RELAY_SHARE = get_package_share_directory("g1_sensor_relay")
 
-UNITREE_MUJOCO_BIN = "/opt/unitree_robotics/unitree_mujoco/simulate/build/unitree_mujoco"
+UNITREE_ROBOTICS_PREFIX = os.environ.get("UNITREE_ROBOTICS_PREFIX", "")
+UNITREE_MUJOCO_BIN = os.environ.get("UNITREE_MUJOCO_BIN", "")
 # Vendored G1 model directory, derived from the binary location. MuJoCo resolves <include>
 # relative to the staged file, so scenes are copied in here rather than read from the share.
 G1_MODEL_DIR = os.path.normpath(
@@ -42,7 +43,7 @@ STAGED_SCENE_NAME = "g1_grove_scene.staged.xml"
 STAGED_WALK_BASE = "g1_walk_base.staged.xml"
 
 # So the simulator loads its own CycloneDDS build, not ROS's ABI-incompatible one.
-UNITREE_ROBOTICS_LIB = "/opt/unitree_robotics/lib"
+UNITREE_ROBOTICS_LIB = os.path.join(UNITREE_ROBOTICS_PREFIX, "lib")
 
 # Managed as a launch action: xvfb-run orphans its children, leaving the sim running after
 # launch exits.
@@ -80,8 +81,8 @@ def _cyclonedds_problems(uri):
     walk past this and put rt/lowcmd on the LAN."""
     if not uri:
         return [
-            "CYCLONEDDS_URI is unset -- expected the container-baked cyclonedds.xml pinning "
-            "the 'lo' interface (see .devcontainer/Dockerfile)."
+            "CYCLONEDDS_URI is unset -- source scripts/native-env.sh to select the "
+            "loopback-only simulation profile."
         ]
 
     if uri.lstrip().startswith("<"):
@@ -90,7 +91,7 @@ def _cyclonedds_problems(uri):
         path = uri[len("file://"):] if uri.startswith("file://") else uri
         if not os.path.isfile(path):
             # An unreadable URI is only a warning to CycloneDDS, which then falls back to
-            # defaults and, with network_mode: host, binds the real NIC.
+            # defaults and may bind the real NIC.
             return [
                 f"CYCLONEDDS_URI points at {path!r}, which does not exist -- CycloneDDS would "
                 "silently fall back to defaults and bind the host NIC instead of 'lo'."
@@ -109,6 +110,15 @@ def _check_environment(context, *args, **kwargs):
     """Fails the launch before anything starts. An empty ROS graph from a silent RMW/domain
     mismatch is much harder to debug than an explicit error."""
     problems = []
+
+    if not UNITREE_ROBOTICS_PREFIX:
+        problems.append("UNITREE_ROBOTICS_PREFIX is unset.")
+    if not UNITREE_MUJOCO_BIN:
+        problems.append("UNITREE_MUJOCO_BIN is unset.")
+    elif not os.path.isfile(UNITREE_MUJOCO_BIN):
+        problems.append(
+            f"UNITREE_MUJOCO_BIN points at {UNITREE_MUJOCO_BIN!r}, which does not exist."
+        )
 
     # ROS must not load a second CycloneDDS: the hardware component reaches the wire through
     # unitree_sdk2's own, and the two ship libddsc.so.0 with different ABIs.
@@ -130,8 +140,7 @@ def _check_environment(context, *args, **kwargs):
             "g1_bringup/sim.launch.py: refusing to start, environment precondition(s) "
             "failed:\n"
             + "\n".join(f"  - {p}" for p in problems)
-            + "\nThese are set container-wide by .devcontainer/Dockerfile; a fresh "
-            "'manage.sh recreate' is the usual fix."
+            + "\nSource scripts/native-env.sh in this shell before launching the stack."
         )
     return []
 

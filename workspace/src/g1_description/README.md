@@ -25,10 +25,9 @@ flowchart LR
 | `config/lowcmd_params.yaml` | Body-component tunables and the per-joint position-only gains. |
 | `config/dex3_params.yaml` | Hand-component tunables and the per-finger limits. |
 
-Visual meshes are not committed. CMake copies them at configure time from
-`/opt/unitree_robotics/unitree_mujoco/unitree_robots/g1/meshes`, overridable with the
-`G1_VENDOR_MESHES` cache variable. If that directory is missing, the build warns and RViz shows no
-robot model.
+Visual meshes are not committed. `scripts/native-env.sh` points CMake at the meshes installed
+under `.native/src/unitree_mujoco/unitree_robots/g1/meshes`. If that directory is missing, run
+`scripts/setup-native-jazzy.sh` before building; RViz needs these files to render the robot.
 
 Parameters are loaded with `xacro.load_yaml` and expanded into `<param>` tags, because
 `ros2_control` hardware plugins only ever receive parameters that way, never from

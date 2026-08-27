@@ -1,297 +1,278 @@
-![Grove-G1](docs/media/banner.svg)
+# Humanoid_ROS2
 
-# Grove-G1
+Native ROS 2 Jazzy simulation and autonomy development for the Unitree G1 humanoid.
 
-[![CI](https://github.com/Adyansh04/grove-g1/actions/workflows/ci.yml/badge.svg)](https://github.com/Adyansh04/grove-g1/actions/workflows/ci.yml)
-[![License: BSD-3-Clause](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE)
+This repository is an independent development copy derived from
+[`maxwellrobotics/g1-ros2`](https://github.com/maxwellrobotics/g1-ros2). It targets Ubuntu 24.04
+and runs directly on the host without Docker.
 
-> The earlier Humble line, where Unitree's own internal leg policy walks the robot and this stack
-> only does arm manipulation on top, is kept on
-> [`humble-unitree`](https://github.com/Adyansh04/grove-g1/tree/humble-unitree).
+## What I changed in this version
 
-An autonomy stack for the [Unitree G1](https://www.unitree.com/g1) humanoid, built on ROS 2 Jazzy
-and developed simulation-first against `unitree_mujoco`.
+This is not an untouched mirror of the upstream repository. My work on this version focuses on
+making the project easier to install, understand, reproduce, and extend as a ROS 2 Jazzy learning
+platform:
 
-The simulator speaks the same DDS channels as the real robot, so the hardware interface, the
-navigation stack and the control-authority logic all carry over to hardware without code changes.
-Moving to the physical G1 is a domain-ID and interface change, not a rewrite.
+- Replaced the Docker and dev-container workflow with a native Ubuntu 24.04 / ROS 2 Jazzy setup.
+- Added pinned, workspace-local builds for Unitree SDK2, Livox SDK2, MuJoCo, and ONNX Runtime.
+- Moved generated dependencies, caches, simulator binaries, and ROS logs under `.native/`.
+- Made Unitree SDK2, ONNX Runtime, simulator, and robot-mesh paths configurable instead of relying
+  on fixed installation paths.
+- Added native dependency, environment, build, launch, cleanup, and repository-copy scripts.
+- Added a loopback-only CycloneDDS profile to isolate simulated Unitree motor traffic from physical
+  network interfaces.
+- Updated the ROS 2 external import flow for Jazzy and shallow source imports.
+- Removed Docker-specific automation and large demo GIF files from the project history.
+- Built and validated 14 ROS packages natively.
+- Verified MuJoCo 3.3.6, the learned locomotion policy, controller activation, Dex3 simulation,
+  live IMU data, RViz startup, and `/joint_states` near 200 Hz.
+- Documented the engineering work required for a future Gazebo Harmonic backend.
 
-## What it does today
+Detailed migration notes are in [docs/JAZZY_MIGRATION.md](docs/JAZZY_MIGRATION.md). A ready-to-use
+recording plan and narration are in [docs/LINKEDIN_DEMO.md](docs/LINKEDIN_DEMO.md).
 
-The robot maps a facility with SLAM Toolbox, localizes against the saved map, and drives itself to
-a goal pose under Nav2. Balance is ours: a learned locomotion policy runs at 50 Hz inside a
-`ros2_control` controller and commands all 29 body motors over `rt/lowcmd`, with no onboard
-controller underneath. Arm trajectories are an ordinary `JointTrajectoryController` claiming the
-14 arm joints on the same component, so MoveIt executes while the policy keeps the robot up.
+## What you can learn from this repository
 
-MoveIt plans for either arm or both together, collision-checked against a live octomap built from
-the LiDAR, and each Dex3-1 hand is its own planning group with `open` and `closed` postures.
+This project can be followed as a practical humanoid-robotics learning path:
 
-On top of that, pick and place are served as actions, and a BehaviorTree.CPP behaviour tree
-sequences them with navigation into a mission that runs end to end in the facility world: drive
-to a workbench, walk the last half metre under closed-loop control, pick a cube up, carry it
-across the building, and put it down on a bench. Object poses come from a source that refuses to
-run on hardware, because there is no object-detection pipeline yet; a real one replaces it
-without the skills changing.
+1. How a humanoid URDF and meshes become a ROS robot description.
+2. How `ros2_control` divides command ownership across legs, waist, arms, and hands.
+3. How a learned ONNX policy runs inside a real-time-style controller loop.
+4. How MuJoCo physics exchanges low-level state and commands with Unitree SDK2.
+5. How IMU, LiDAR, depth, joint state, odometry, and TF data reach ROS 2.
+6. How RViz, Fast-LIO, SLAM Toolbox, Nav2, and MoveIt consume that data.
+7. How the same ROS interfaces can be kept while introducing another physics backend such as
+   Gazebo Harmonic.
 
-Nav2 parks within 0.5 m of a goal and the arm's usable window is about 0.2 m wide, so a base
-approach skill closes the gap against the measured object rather than against the map. The tree
-is editable in Groot2 against a generated node palette.
+```mermaid
+flowchart LR
+    CMD["/cmd_vel"] --> POLICY["Learned locomotion controller"]
+    POLICY --> CONTROL["ros2_control"]
+    CONTROL --> SDK["Unitree SDK2 / rt-lowcmd"]
+    SDK <--> SIM["MuJoCo physics"]
+    SIM --> SENSORS["IMU / LiDAR / depth / ground truth"]
+    SENSORS --> ROS["ROS 2 topics and TF"]
+    ROS --> RVIZ["RViz"]
+    ROS --> AUTO["Fast-LIO / Nav2 / MoveIt"]
+```
 
-Learned manipulation for unstructured scenes is the next milestone and is not built yet.
+## Project status
 
-## Nav2 Demo
+| Capability | Status |
+|---|---|
+| ROS 2 Jazzy native build | Working |
+| Unitree MuJoCo physics simulation | Working |
+| `ros2_control` body and Dex3 interfaces | Working |
+| Learned G1 locomotion controller | Working |
+| RViz robot, TF, joint-state, and sensor visualization | Working |
+| Fast-LIO, Nav2, MoveIt, and manipulation packages | Available |
+| Gazebo Harmonic simulation | Planned; dependencies are installed, integration is not implemented yet |
 
-![Nav2 Demo](docs/media/grove_nav2_demo.gif)
-
-## MoveIt Demo
-
-![MoveIt Demo](docs/media/grove_moveit_demo.gif)
-
-## Pick & Place Demo
-
-![Pick & Place Demo](docs/media/grove_pick_place_demo.gif)
+The verified simulator is currently Unitree MuJoCo. Gazebo is not presented as working until its
+control and sensor paths have been implemented and tested.
 
 ## Architecture
 
-![Grove-G1 architecture](docs/media/architecture.svg)
+The stack uses:
 
-On hardware the simulation card becomes the physical G1 and the LiDAR front end becomes
-`livox_ros_driver2`. Everything above the DDS rail is unchanged.
+- ROS 2 Jazzy on Ubuntu 24.04.
+- `ros2_control` for body, arm, waist, and Dex3 hand controller ownership.
+- A learned ONNX locomotion policy for G1 balance and velocity control.
+- Unitree SDK2 DDS channels isolated to the loopback interface during simulation.
+- MuJoCo for robot physics and simulated sensor sampling.
+- RViz for ROS visualization.
+- Fast-LIO, SLAM Toolbox, Nav2, MoveIt, and BehaviorTree.CPP for autonomy.
 
-Two rules shape the design, and both apply in simulation so the habits transfer:
+## Native installation
 
-- Only one publisher ever commands `rt/lowcmd`. Control-mode ownership is explicit, and the
-  hardware component leaves any joint no controller claims unpowered, so "who owns this joint" is
-  also "does this joint hold".
-- Commanding `rt/lowcmd` means owning balance. There is no onboard controller left underneath to
-  catch a mistake.
+Requirements:
 
-## Packages
+- x86-64 Ubuntu 24.04
+- ROS 2 Jazzy installed in `/opt/ros/jazzy`
+- Internet access during initial dependency setup
+- Approximately 12 GB of free disk space
 
-| Package | What it does |
-|---|---|
-| [`g1_bringup`](workspace/src/g1_bringup) | The entry point. Launch files, scenes and config that compose everything below. |
-| [`g1_description`](workspace/src/g1_description) | Vendored G1 URDF plus the `ros2_control` xacro wrapper. |
-| [`g1_hand_interface`](workspace/src/g1_hand_interface) | `ros2_control` plugin for one Dex3-1 hand, over the hand's own SDK channels. |
-| [`g1_controllers`](workspace/src/g1_controllers) | The locomotion policy, its chained safety controller and the freeze controllers. |
-| [`g1_hardware_interface`](workspace/src/g1_hardware_interface) | `ros2_control` plugin owning all 29 body motors over `rt/lowcmd`. |
-| [`g1_locomotion`](workspace/src/g1_locomotion) | Walks the base into arm's reach of a measured object, and backs it out again. |
-| [`g1_manipulation`](workspace/src/g1_manipulation) | Pick and place as actions, and the object-pose source behind them. |
-| [`g1_moveit_config`](workspace/src/g1_moveit_config) | MoveIt config: arm and hand planning groups, kinematics, the octomap. |
-| [`g1_msgs`](workspace/src/g1_msgs) | The mission's own actions: pick, place, approach, retreat, arm posture. |
-| [`g1_navigation`](workspace/src/g1_navigation) | SLAM Toolbox mapping, AMCL localization and Nav2. |
-| [`g1_orchestration`](workspace/src/g1_orchestration) | The behaviour tree that sequences navigation and manipulation into a mission. |
-| [`g1_sensor_relay`](workspace/src/g1_sensor_relay) | Publishes LiDAR and depth frames sampled inside the simulator. |
-| [`g1_state_estimation`](workspace/src/g1_state_estimation) | Publishes `odom` to `base_footprint` and the TF chain Nav2 needs. |
-
-## Quick start
-
-The ROS build and runtime commands run inside the dev container, which pins the ROS 2 Jazzy and
-Ubuntu 24.04 toolchain the stack is built and tested against.
-
-### Prerequisites
-
-Install Docker Engine with Docker Compose v2, the NVIDIA driver and the NVIDIA Container Toolkit
-on the host. The simulator uses the GPU exposed by `docker-compose.yml`. For the GUI modes, run
-from an X11 desktop session; `manage.sh start` grants the container local X11 access.
-
-Install [`vcstool`](https://github.com/dirk-thomas/vcstool) on the host as well, because the
-import script uses its `vcs` command before the development container exists:
+Run from the repository root:
 
 ```bash
-sudo apt install python3-vcstool
-```
-
-### Start the development container
-
-From the repository root, on the host:
-
-```bash
-cp .env.example .env
+./scripts/install-native-dependencies.sh
 ./scripts/import-externals.sh
-./scripts/manage.sh start
-./scripts/manage.sh exec
+./scripts/setup-native-jazzy.sh
+./scripts/build-native-jazzy.sh
 ```
 
-`import-externals.sh` pulls the third-party packages listed in `workspace.repos` into
-`workspace/src` and puts the two that ship a non-standard layout into a buildable one. Run it
-again whenever `workspace.repos` changes.
+The setup keeps Unitree SDK2, Livox SDK2, ONNX Runtime, MuJoCo, caches, and downloaded source under
+the ignored `.native/` directory. It does not place third-party project dependencies under `/opt`.
 
-### Build and run the stack
-
-Inside the container:
+Source the environment in every new terminal:
 
 ```bash
-cd /root/workspace
-colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-source install/setup.bash
+source scripts/native-env.sh
 ```
 
-Then bring up the robot. One command covers every mode:
+## First learning lab
+
+The shortest useful exercise is to launch the robot, inspect the control graph, and connect what
+you see in MuJoCo to the ROS interfaces.
+
+Terminal 1:
 
 ```bash
-# Simulator only, with the MuJoCo viewer
+source scripts/native-env.sh
 ros2 launch g1_bringup bringup.launch.py headless:=false
+```
 
-# Build a map, with RViz but without the MuJoCo viewer
-ros2 launch g1_bringup bringup.launch.py mode:=mapping rviz:=true headless:=true
+Terminal 2:
 
-# Localize against the committed map and navigate, with RViz but without the MuJoCo viewer
-ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true rviz:=true headless:=true
+```bash
+source scripts/native-env.sh
+ros2 node list
+ros2 control list_controllers
+ros2 topic list -t
+ros2 topic hz /joint_states
+ros2 topic echo /imu_sensor_broadcaster/imu --once
+```
 
-# Plan for the arms and hands, with the LiDAR octomap in the planning scene
-ros2 launch g1_bringup bringup.launch.py moveit:=true sensors:=true rviz:=true headless:=true
+Questions to answer while exploring:
 
-# Pick and place skills, on the small test world where the object is already within reach
+- Which controllers are active, and which are intentionally inactive?
+- Why does the locomotion policy own the legs while the arm trajectory controller waits?
+- Which frame publishes the IMU measurement?
+- What changes in the ROS graph when `sensors:=true` or `rviz:=true` is added?
+- Which pieces are specific to MuJoCo, and which could remain unchanged with Gazebo?
+
+## Run the current MuJoCo simulation
+
+Open the MuJoCo viewer:
+
+```bash
+ros2 launch g1_bringup bringup.launch.py headless:=false
+```
+
+Run with simulated sensors and RViz:
+
+```bash
+ros2 launch g1_bringup bringup.launch.py \
+  sensors:=true rviz:=true headless:=false odometry:=ground_truth
+```
+
+Run physics without a visible MuJoCo window:
+
+```bash
+ros2 launch g1_bringup bringup.launch.py headless:=true
+```
+
+The convenience wrapper exposes the same native workflow:
+
+```bash
+./scripts/manage.sh setup
+./scripts/manage.sh build
+./scripts/manage.sh sim headless:=false
+```
+
+### Verify the running simulation
+
+In another terminal:
+
+```bash
+source scripts/native-env.sh
+ros2 node list
+ros2 control list_controllers
+ros2 topic hz /joint_states
+```
+
+The bare simulation should publish `/joint_states` near 200 Hz. The learned locomotion controller,
+locomotion safety controller, joint-state broadcaster, IMU broadcaster, arm freeze controller,
+and waist freeze controller should be active.
+
+## RViz
+
+RViz is a visualization and interaction tool, not the physics engine. It can display the robot
+model, joint states, TF, LiDAR point clouds, maps, Nav2 data, and MoveIt planning while MuJoCo—or a
+future Gazebo backend—runs the physics.
+
+## Gazebo Harmonic plan
+
+ROS 2 Jazzy uses Gazebo Harmonic, and this development machine already has `ros_gz` and
+[`gz_ros2_control`](https://control.ros.org/jazzy/doc/gz_ros2_control/doc/index.html). A proper
+Gazebo backend still needs these project changes:
+
+1. Add a Gazebo-specific G1 xacro using `gz_ros2_control/GazeboSimSystem` instead of the Unitree
+   DDS hardware plugin.
+2. Convert or recreate the MuJoCo MJCF scenes as Gazebo SDF worlds.
+3. Spawn the G1 model and load the existing controller configuration through the
+   `gz_ros2_control` system plugin.
+4. Bridge Gazebo IMU, LiDAR, depth, clock, and ground-truth state into the ROS topic and TF
+   contracts used by this stack.
+5. Revalidate the learned locomotion policy against Gazebo contact dynamics and controller timing.
+6. Add a dedicated `gazebo.launch.py` and simulation tests before declaring backend parity.
+
+Gazebo support is feasible, but merely opening the URDF in Gazebo would not reproduce the current
+walking, sensor, navigation, or manipulation behavior.
+
+## Autonomy examples
+
+Build the optional BehaviorTree orchestration package:
+
+```bash
+./scripts/build-native-jazzy.sh --full
+source scripts/native-env.sh
+```
+
+Mapping:
+
+```bash
+ros2 launch g1_bringup bringup.launch.py mode:=mapping rviz:=true
+```
+
+Localization and Nav2:
+
+```bash
+ros2 launch g1_bringup bringup.launch.py \
+  mode:=localization nav:=true rviz:=true
+```
+
+MoveIt with simulated perception:
+
+```bash
+ros2 launch g1_bringup bringup.launch.py \
+  moveit:=true sensors:=true rviz:=true
+```
+
+Manipulation test world:
+
+```bash
 ros2 launch g1_bringup bringup.launch.py \
   moveit:=true manipulation:=true pin_pelvis:=true world:=manipulation \
-  activate_arm:=true activate_arm_delay_s:=40.0 headless:=true
-
-# Everything at once, including the MuJoCo viewer and RViz
-ros2 launch g1_bringup bringup.launch.py \
-  mode:=localization nav:=true moveit:=true manipulation:=true rviz:=true \
-  activate_arm:=true activate_arm_delay_s:=40.0 headless:=false
+  activate_arm:=true activate_arm_delay_s:=40.0 rviz:=true
 ```
 
-`headless:=true` is the default and suits any run without a display. Set `headless:=false` only
-when a local display is available to open the MuJoCo viewer, and do not use the viewer's Reload
-button while sensors are running.
+## Main packages
 
-After launching a mode, confirm the ROS graph is up from a second container shell:
-
-```bash
-ros2 topic list -t
-```
-
-Run a mission. The tree drives navigation and manipulation; nothing else needs starting, and
-Groot2 on the host can watch it tick at `localhost:1667`:
-
-```bash
-ros2 launch g1_orchestration mission.launch.py tree:=pick_and_place_in_place.xml
-```
-
-The full navigate-pick-carry-place mission needs the facility world and a map:
-
-```bash
-ros2 launch g1_bringup bringup.launch.py \
-  mode:=localization nav:=true moveit:=true manipulation:=true world:=navigation \
-  rviz:=true activate_arm:=true activate_arm_delay_s:=55.0
-```
-
-```bash
-ros2 launch g1_orchestration mission.launch.py tree:=pick_and_place.xml
-```
-
-With `rviz:=true` and both MoveIt and Nav2 running, this opens two RViz windows: the MoveIt one
-for the arm and a second on the navigation config for the map and costmaps.
-
-Send it somewhere:
-
-```bash
-ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
-  "{pose: {header: {frame_id: map}, pose: {position: {x: 2.5, y: -2.5}, orientation: {w: 1.0}}}}"
-```
-
-Moving the arms or hands needs an explicit acquire step first, and a matching release. It takes
-the arm and both hands together; a hand that is absent or unpowered logs and leaves the arm
-usable.
-
-```bash
-ros2 launch g1_bringup activate_arm.launch.py
-# plan from RViz's MotionPlanning panel, or send FollowJointTrajectory goals to
-# arm_trajectory_controller, left_hand_controller or right_hand_controller
-ros2 launch g1_bringup deactivate_arm.launch.py
-```
-
-## Development environment
-
-Docker Compose is the runtime source of truth; `.devcontainer/devcontainer.json` is the VS Code
-layer on top. In VS Code, use `Dev Containers: Reopen in Container`.
-
-| Setting | Value |
+| Package | Purpose |
 |---|---|
-| ROS distro | Jazzy, pinned. |
-| Middleware | `rmw_fastrtps_cpp` image-wide. The SDK carries its own CycloneDDS, pinned to loopback, and ROS must not load a second one. |
-| `ROS_DOMAIN_ID` | 1 |
-| Robot override | `GROVE_G1_ROS_DOMAIN_ID`, `GROVE_G1_CYCLONEDDS_URI`, `GROVE_G1_ROBOT_NIC` |
-| C++ standard | C++20 on GCC 13.3 |
-| Workspace | `/root/workspace` |
-| Shared data | `/root/data` |
+| `g1_bringup` | MuJoCo, ROS control, sensors, and top-level launch files |
+| `g1_description` | G1 URDF, meshes, and `ros2_control` model |
+| `g1_controllers` | Learned locomotion, safety, and freeze controllers |
+| `g1_hardware_interface` | Unitree DDS body interface for all 29 motors |
+| `g1_hand_interface` | Dex3 hand interfaces |
+| `g1_state_estimation` | Ground-truth and Fast-LIO odometry/TF |
+| `g1_sensor_relay` | Simulated LiDAR, IMU, depth, and object data |
+| `g1_navigation` | SLAM Toolbox, localization, and Nav2 |
+| `g1_moveit_config` | MoveIt planning and RViz configuration |
+| `g1_manipulation` | Pick-and-place actions |
+| `g1_orchestration` | BehaviorTree.CPP mission execution |
+| `g1_locomotion`, `g1_msgs` | Base approach actions and project interfaces |
 
-The container runs `privileged` with `network_mode: host` and a `/dev` bind mount. That is
-deliberate for local robotics development: DDS discovery between the bare-DDS simulator and the
-ROS graph happens over loopback, and device access has to work.
+## Safety
 
-Pointing the container at a real G1 is three environment variables, not an image rebuild:
-`GROVE_G1_CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.hardware.xml` (baked in beside the
-loopback one, differing only in the interface), `GROVE_G1_ROBOT_NIC` for the NIC that reaches
-the robot, and `GROVE_G1_ROS_DOMAIN_ID` for its domain. They are prefixed because the base
-image's own `/etc/profile.d/10-ros-env.sh` rewrites the unprefixed names. `sim.launch.py`
-refuses to start unless `CYCLONEDDS_URI` names a profile that pins `lo`, so the simulator
-cannot be brought up pointing at a robot.
+- Always source `scripts/native-env.sh` before simulation.
+- The simulation profile pins Unitree CycloneDDS traffic to loopback.
+- Never select a robot-facing network interface for simulation.
+- Use `./scripts/clean-stack.sh` after a crashed or interrupted launch.
+- Do not use the MuJoCo viewer's Reload button while simulated sensors are active.
 
-Lifecycle:
+## License and origin
 
-```bash
-./scripts/manage.sh start | stop | restart | recreate | logs | exec
-```
-
-Use `exec-as-me` instead of `exec` for anything that rewrites source files in place, such as
-`clang-tidy --fix` or `clang-format -i`. It runs as your host user, so the files do not come back
-owned by root.
-
-Project dependencies belong in `.devcontainer/Dockerfile`, followed by
-`./scripts/manage.sh recreate`. Do not install into a running container and forget about it.
-
-## Tests
-
-```bash
-colcon test --packages-select g1_description g1_locomotion g1_navigation
-colcon test-result --all
-```
-
-Leftover nodes from a previous run are the most productive source of phantom failures here:
-several copies of the stack on one DDS graph look like bugs everywhere except where they are.
-Clear them first, and note it verifies the graph rather than the process table:
-
-```bash
-./scripts/clean-stack.sh
-```
-
-Suites that launch a simulator are timing-sensitive and serialize on a shared ctest resource lock.
-Run them **one package at a time**, and check nothing is left over from a previous run
-(`pgrep -x unitree_mujoco`) before trusting a result: a stray simulator is the usual explanation
-for a batch of failures that all pass on a clean rerun. Each package README says which of its
-tests need a simulator.
-
-Those suites carry the ctest label `simulator`, so the rest can be run on their own:
-
-```bash
-colcon test --ctest-args -LE simulator   # everything that needs no simulator
-colcon test --ctest-args -L  simulator   # only the simulator suites
-```
-
-## Continuous integration
-
-Every pull request, and every push to `main`, builds the workspace and runs the tests that need
-no simulator, in the image built by `.github/ci.Dockerfile`. Lint runs as part of `colcon test`,
-not separately.
-
-The simulator suites are excluded: they are CPU-time-sensitive and measure a shared runner
-rather than the stack. Run them locally before merging anything that touches locomotion,
-navigation or the sensor path.
-
-A per-package C++ coverage table is printed to each run's summary. It covers only the tests CI
-runs, so the node and launch layer reads low there by construction. It is a signal on the pure
-logic, not a figure for the repository, which is why there is no badge for it.
-
-## Repository layout
-
-```
-.devcontainer/     derived dev image
-workspace/src/     ROS 2 packages
-workspace/patches/ patches applied to vendored sources at image build
-workspace/vendor/  our source compiled into the vendored simulator
-scripts/           container lifecycle, and stack teardown
-```
+The upstream BSD-3-Clause license and copyright notice are retained in [LICENSE](LICENSE).
+See [ORIGIN.md](ORIGIN.md) for the source repository and commit. Third-party components retain
+their own licenses.

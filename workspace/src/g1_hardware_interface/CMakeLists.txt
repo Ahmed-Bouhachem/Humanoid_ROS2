@@ -13,8 +13,13 @@ find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(realtime_tools REQUIRED)
 
-# Plain CMake package baked into the dev image, not an ament one, so it needs the prefix.
-set(UNITREE_SDK2_PREFIX /opt/unitree_robotics)
+# Plain CMake package installed workspace-locally by setup-native-jazzy.sh.
+set(UNITREE_SDK2_PREFIX "$ENV{UNITREE_SDK2_PREFIX}" CACHE PATH
+  "Unitree SDK2 installation prefix")
+if(NOT UNITREE_SDK2_PREFIX)
+  message(FATAL_ERROR
+    "UNITREE_SDK2_PREFIX is unset. Source scripts/native-env.sh before building.")
+endif()
 find_package(unitree_sdk2 REQUIRED PATHS ${UNITREE_SDK2_PREFIX}/lib/cmake NO_DEFAULT_PATH)
 
 # The SDK must bind the libddsc/libddscxx it ships, not ROS's newer CycloneDDS: same SONAME,

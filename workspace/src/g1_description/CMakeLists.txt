@@ -9,9 +9,14 @@ find_package(ament_cmake REQUIRED)
 
 install(DIRECTORY urdf config DESTINATION share/${PROJECT_NAME})
 
-# Copied at configure time rather than committed
-set(G1_VENDOR_MESHES "/opt/unitree_robotics/unitree_mujoco/unitree_robots/g1/meshes"
+# Copied at configure time rather than committed. Native Jazzy setup exports
+# this path through scripts/native-env.sh.
+set(G1_VENDOR_MESHES "$ENV{G1_VENDOR_MESHES}"
     CACHE PATH "Directory holding the vendored G1 visual meshes")
+if(NOT G1_VENDOR_MESHES)
+  message(FATAL_ERROR
+    "G1_VENDOR_MESHES is unset. Source scripts/native-env.sh before building.")
+endif()
 
 if(EXISTS "${G1_VENDOR_MESHES}")
   file(GLOB _stls CONFIGURE_DEPENDS "${G1_VENDOR_MESHES}/*.STL")

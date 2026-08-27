@@ -2,12 +2,11 @@
 workspace/build/
 workspace/install/
 workspace/log/
+/log/
+.native/
 
-# workspace/.clang-format, .clang-tidy, .clangd and ruff.toml are NOT ignored any more.
-# They used to be empty root-owned placeholders that Docker materialised for four
-# single-file bind mounts, hence the ignore. Those mounts are gone; the paths are now
-# committed relative symlinks to the repo-root configs, and the package CMakeLists resolve
-# their lint configs through them (${CMAKE_CURRENT_SOURCE_DIR}/../../<config>).
+# Workspace lint configuration paths are committed relative symlinks to the
+# repository-root files.
 
 # Keep source directory structure
 !workspace/src/
@@ -22,7 +21,7 @@ workspace/src/unitree_ros2/
 workspace/src/livox_ros_driver2/
 workspace/src/fast_lio_humanoid/
 
-# Environment files (keep .env.example)
+# Local environment files
 .env
 
 # Python

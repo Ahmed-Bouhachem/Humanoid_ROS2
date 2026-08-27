@@ -3,7 +3,7 @@
 # Navigation soak test. Brings the stack up, drives a list of goals across the facility one at
 # a time, records health, and tears everything down.
 #
-# Run inside the container:
+# Run after sourcing scripts/native-env.sh:
 #   ros2 run g1_navigation nav_soak
 #   ros2 run g1_navigation nav_soak --rviz
 #   ros2 run g1_navigation nav_soak --goals "3.0 -3.0,-2.5 2.0"
@@ -70,13 +70,13 @@ teardown() {
         cmd=$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null) || continue
         exe=$(readlink "/proc/$p/exe" 2>/dev/null)
         case "$cmd$exe" in
-            *nav_diag.py*|*"ros2 launch"*|*"ros2 action"*|*/root/workspace/install/*|*unitree_mujoco*|\
+            *nav_diag.py*|*"ros2 launch"*|*"ros2 action"*|*/workspace/install/*|*unitree_mujoco*|\
             *rviz2*|*ros2_control_node*|*robot_state_publisher*|*component_container*|*nav2_*|\
             *controller_server*|*planner_server*|*bt_navigator*|*amcl*|*map_server*|*lifecycle_manager*)
                 kill -KILL "$p" 2>/dev/null ;;
         esac
     done
-    rm -f /opt/unitree_robotics/unitree_robots/g1/*.staged.xml 2>/dev/null
+    rm -f "${G1_VENDOR_MESHES%/meshes}"/*.staged.xml 2>/dev/null
     ros2 daemon stop >/dev/null 2>&1
 }
 
@@ -86,7 +86,7 @@ verify_clean() {
         [ "$p" = "$$" ] && continue
         cmd=$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null) || continue
         case "$cmd" in
-            *nav_diag.py*|*/root/workspace/install/*|*unitree_mujoco*|*"ros2 launch"*) n=$((n + 1)) ;;
+            *nav_diag.py*|*/workspace/install/*|*unitree_mujoco*|*"ros2 launch"*) n=$((n + 1)) ;;
         esac
     done
     echo "  workspace processes still alive: $n"

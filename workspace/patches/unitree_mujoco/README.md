@@ -1,6 +1,6 @@
 # unitree_mujoco patches
 
-Patches applied to the vendored `unitree_mujoco` source at image build time.
+Patches applied to the vendored `unitree_mujoco` source by `scripts/setup-native-jazzy.sh`.
 
 ## Why patch the vendor at all
 
@@ -24,9 +24,9 @@ Full reasoning is kept in the maintainer's local engineering notes.
 
 ## Updating the pin
 
-Bumping `UNITREE_MUJOCO_SHA` in `.devcontainer/Dockerfile` is a **two-part change**: the new SHA and
-regenerated patches. The build runs `git apply --check` first, so a patch that no longer applies
-**fails the image build** rather than silently producing a sim without sensors.
+Bumping `UNITREE_MUJOCO_SHA` in `scripts/setup-native-jazzy.sh` is a **two-part change**: the new
+SHA and regenerated patches. The setup runs `git apply --check` first, so a patch that no longer
+applies fails the native build rather than silently producing a simulator without sensors.
 
 To regenerate against a new SHA:
 

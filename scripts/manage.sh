@@ -1,95 +1,60 @@
-#!/bin/bash
-#
-# Unified script for managing the ROS development Docker container lifecycle.
-#
-# Usage: ROS_DISTRO=jazzy ./scripts/manage.sh [start|stop|restart|recreate|logs|exec|exec-as-me]
-#
+#!/usr/bin/env bash
 
+# Convenience entry point for the native Ubuntu 24.04 / ROS 2 Jazzy workflow.
 set -euo pipefail
 
-# --- Configuration ---
-SERVICE_NAME="ros-dev"
-ENV_FILE="$(cd "$(dirname "$0")/.." && pwd)/.env"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ACTION="${1:-help}"
+shift || true
 
-# Load .env first so it wins over any inherited shell values.
-if [[ -f "$ENV_FILE" ]]; then
-    set -a
-    # shellcheck disable=SC1090
-    source "$ENV_FILE"
-    set +a
-else
-    echo "Warning: no .env file found at $ENV_FILE; falling back to shell environment and Compose defaults." >&2
-fi
+usage() {
+    cat <<'EOF'
+Usage: ./scripts/manage.sh ACTION [launch arguments]
 
-# --- Helper Functions ---
-function print_usage() {
-    echo "Usage: ROS_DISTRO=<humble|jazzy|...> $0 [start|stop|restart|recreate|logs|exec|exec-as-me]"
-    echo "Note: .env is loaded first when present; otherwise shell environment and Compose defaults are used."
-    echo "  start     - Build and start the container in detached mode."
-    echo "  stop      - Stop the running container."
-    echo "  restart   - Restart the container."
-    echo "  recreate  - Stop, remove, and rebuild the container from scratch."
-    echo "  logs      - Follow the container's log output."
-    echo "  exec      - Attach a bash shell to the running container (root)."
-    echo "  exec-as-me - Same, as your host UID/GID. Use for clang-tidy --fix / clang-format -i."
+  deps        Install Ubuntu and ROS 2 Jazzy packages (uses sudo apt).
+  setup       Import ROS externals and build pinned native vendor libraries.
+  build       Build the Jazzy workspace (skips optional orchestration).
+  build-full  Build every package, including BehaviorTree orchestration.
+  sim         Launch native MuJoCo and ROS 2; extra arguments are forwarded.
+  clean       Stop leftover G1/ROS processes and clear stale DDS state.
+  env         Print the command used to enter the project environment.
+
+Examples:
+  ./scripts/manage.sh sim headless:=false
+  ./scripts/manage.sh sim sensors:=true rviz:=true headless:=false
+EOF
 }
 
-# --- Main Logic ---
-ACTION=${1:-"help"}
-
-case "$ACTION" in
-    start)
-    echo "Starting ROS development container for ROS_DISTRO='${ROS_DISTRO:-<from defaults>}'..."
-    echo "Granting GUI access (X11)..."
-    xhost +local:docker 2>/dev/null || true
-    docker compose up -d --build "${SERVICE_NAME}"
-    echo
-    echo "Active services:"
-    docker compose ps
-    echo
-    echo "Service '${SERVICE_NAME}' started. Use './scripts/manage.sh exec' to open a shell."
+case "${ACTION}" in
+    deps)
+        exec "${REPO_ROOT}/scripts/install-native-dependencies.sh"
         ;;
-    stop)
-        echo "Stopping container..."
-        docker compose stop
-        echo "Stopped."
+    setup)
+        "${REPO_ROOT}/scripts/import-externals.sh"
+        exec "${REPO_ROOT}/scripts/setup-native-jazzy.sh"
         ;;
-    restart)
-        echo "Restarting container..."
-        docker compose restart
-        echo "Restarted."
+    build)
+        exec "${REPO_ROOT}/scripts/build-native-jazzy.sh"
         ;;
-    recreate)
-    echo "Recreating container for ROS_DISTRO='${ROS_DISTRO:-<from defaults>}'..."
-    echo "Code and data on host are preserved: ./workspace, ./data"
-    echo "Granting GUI access (X11)..."
-    xhost +local:docker 2>/dev/null || true
-    docker compose down
-    docker compose up -d --build "${SERVICE_NAME}"
-    echo
-    echo "Active services:"
-    docker compose ps
-    echo "Recreated."
+    build-full)
+        exec "${REPO_ROOT}/scripts/build-native-jazzy.sh" --full
         ;;
-    logs)
-        echo "Following container logs (Ctrl+C to exit)..."
-        docker compose logs -f
+    sim)
+        source "${REPO_ROOT}/scripts/native-env.sh"
+        exec ros2 launch g1_bringup bringup.launch.py "$@"
         ;;
-    exec)
-        echo "Attaching bash to Compose service '${SERVICE_NAME}'..."
-        docker compose exec "${SERVICE_NAME}" bash
+    clean)
+        exec "${REPO_ROOT}/scripts/clean-stack.sh"
         ;;
-    exec-as-me)
-        # Same shell, but as the host's UID/GID instead of root. Use this for anything that
-        # REWRITES sources in place -- clang-tidy --fix, clang-format -i -- because a
-        # root-run tool flips the file's owner on the host and blocks the next host edit.
-        # Everything else should keep using `exec`: root is what makes /root/workspace,
-        # /root/.ssh and unrestricted /dev work as documented.
-        echo "Attaching bash as $(id -u):$(id -g) to '${SERVICE_NAME}'..."
-        docker compose exec --user "$(id -u):$(id -g)" "${SERVICE_NAME}" bash
+    env)
+        printf 'source %q\n' "${REPO_ROOT}/scripts/native-env.sh"
+        ;;
+    help|-h|--help)
+        usage
         ;;
     *)
-        print_usage
-        exit 1
+        echo "Unknown action: ${ACTION}" >&2
+        usage >&2
+        exit 2
         ;;
 esac

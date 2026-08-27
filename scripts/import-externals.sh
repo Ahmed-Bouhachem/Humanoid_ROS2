@@ -32,7 +32,7 @@ patch_upstream() {
     fi
 }
 
-vcs import "${SRC}" < "${REPO_ROOT}/workspace.repos"
+vcs import --shallow "${SRC}" < "${REPO_ROOT}/workspace.repos"
 
 # --- livox_ros_driver2 -------------------------------------------------------------------
 # The repo carries both ROS 1 and ROS 2 sources and picks between them at build time via

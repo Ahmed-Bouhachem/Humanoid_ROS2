@@ -17,10 +17,17 @@ find_package(rclcpp_lifecycle REQUIRED)
 find_package(realtime_tools REQUIRED)
 find_package(std_msgs REQUIRED)
 
-# The shipped onnxruntimeConfig.cmake points at lib64/ and include/onnxruntime/, neither of
-# which exists in this tarball's layout, so locate the pieces directly.
-find_path(ONNXRUNTIME_INCLUDE_DIR onnxruntime_cxx_api.h PATHS /opt/onnxruntime/include REQUIRED)
-find_library(ONNXRUNTIME_LIBRARY onnxruntime PATHS /opt/onnxruntime/lib REQUIRED)
+# The prebuilt archive's CMake config points at paths that are not present in
+# its tarball, so locate the pieces directly in the native local install.
+set(ONNXRUNTIME_ROOT "$ENV{ONNXRUNTIME_ROOT}" CACHE PATH "ONNX Runtime installation prefix")
+if(NOT ONNXRUNTIME_ROOT)
+  message(FATAL_ERROR
+    "ONNXRUNTIME_ROOT is unset. Source scripts/native-env.sh before building.")
+endif()
+find_path(ONNXRUNTIME_INCLUDE_DIR onnxruntime_cxx_api.h
+  PATHS "${ONNXRUNTIME_ROOT}/include" REQUIRED NO_DEFAULT_PATH)
+find_library(ONNXRUNTIME_LIBRARY onnxruntime
+  PATHS "${ONNXRUNTIME_ROOT}/lib" REQUIRED NO_DEFAULT_PATH)
 
 # --- libraries -------------------------------------------------------------
 

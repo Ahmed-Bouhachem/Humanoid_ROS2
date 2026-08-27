@@ -3,7 +3,7 @@ Registers grove-g1's Dex3 hand handler in the vendored unitree_mujoco.
 Generated against unitree_mujoco ae6a8403e272733e9996ef59990880330496177f, on top of
 001 (whose main.cc context this diff includes).
 
-The handler's own source is COPYed in by the Dockerfile and is NOT part of this patch, so
+The handler's own source is copied in by setup-native-jazzy.sh and is NOT part of this patch, so
 this stays a registration hook: an include, a start, two stops, and one source file added
 to the target. simulate/src/unitree_sdk2_bridge.h is untouched, and stays correct, because
 the fingers deliberately have no actuators (see 003).

@@ -2,14 +2,16 @@
 
 <!-- One or two sentences. -->
 
-## Simulator suites
+## Native Jazzy checks
 
-CI runs only the tests that need no simulator. Anything touching locomotion, navigation,
-manipulation or the sensor path has to be checked locally:
+Build and run relevant tests directly on Ubuntu 24.04 with ROS 2 Jazzy:
 
 ```bash
-colcon test --packages-select <pkg> --ctest-args -L simulator
+source scripts/native-env.sh
+./scripts/build-native-jazzy.sh
+cd workspace
+colcon test --packages-select <pkg>
 ```
 
-- [ ] Ran the relevant simulator suites, or this change cannot affect them.
+- [ ] Ran the relevant native build/tests, or this change cannot affect them.
 - [ ] No new publisher on a low-level channel that already has one.
