@@ -27,8 +27,11 @@ platform:
   live IMU data, RViz startup, and `/joint_states` near 200 Hz.
 - Documented the engineering work required for a future Gazebo Harmonic backend.
 
-Detailed migration notes are in [docs/JAZZY_MIGRATION.md](docs/JAZZY_MIGRATION.md). A ready-to-use
-recording plan and narration are in [docs/LINKEDIN_DEMO.md](docs/LINKEDIN_DEMO.md).
+Detailed migration notes are in [docs/JAZZY_MIGRATION.md](docs/JAZZY_MIGRATION.md). The applied
+learning chapter [From `/cmd_vel` to a Humanoid Gait](docs/DEEP_RL_HUMANOID.md) explains the deep
+reinforcement learning, ONNX policy, control timing, safety architecture, and practical labs used
+by this robot. A ready-to-use recording plan and narration are in
+[docs/LINKEDIN_DEMO.md](docs/LINKEDIN_DEMO.md).
 
 ## What you can learn from this repository
 
