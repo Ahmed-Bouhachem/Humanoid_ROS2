@@ -15,6 +15,7 @@ from moveit_msgs.msg import Constraints, JointConstraint, RobotState
 from nav_msgs.msg import Odometry, Path
 import rclpy
 from rclpy.action import ActionClient
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import Imu, JointState, PointCloud2
@@ -413,7 +414,7 @@ def main():
         node.get_logger().error(f"demo stopped safely: {exc}")
         if rclpy.ok():
             node._spin_for(2.0)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()

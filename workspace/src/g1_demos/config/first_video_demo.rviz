@@ -44,13 +44,17 @@ Visualization Manager:
         Loop Animation: false
         Show Robot Collision: false
         Show Robot Visual: true
-        Show Trail: true
+        # Drawing every sampled robot mesh in the trajectory makes the recording view
+        # CPU-bound. The animated robot still shows the complete planned motion.
+        Show Trail: false
         State Display Time: 0.05 s
         Trail Step Size: 5
         Interrupt Display: false
       Scene Geometry:
         Scene Alpha: 0.25
-        Show Scene Geometry: true
+        # The live LiDAR below already shows the surroundings. Rendering MoveIt's octomap as
+        # well duplicates the same geometry; collision checking remains active in move_group.
+        Show Scene Geometry: false
         Voxel Rendering: Occupied Voxels
       Scene Robot:
         Attached Body Color: 150; 50; 150
@@ -92,10 +96,13 @@ Visualization Manager:
             Depth: 5
             Durability Policy: Volatile
             Reliability Policy: Best Effort
-          Style: Flat Squares
-          Size (Pixels): 3
+          # Points use one vertex per return; Flat Squares expand every return into a quad.
+          Style: Points
+          Size (Pixels): 2
           Alpha: 0.85
-          Decay Time: 1.5
+          # A 1.5 s trail retained 15 full sweeps. One current sweep is clearer on video and
+          # avoids rebuilding a large GPU buffer ten times per second.
+          Decay Time: 0
           Position Transformer: XYZ
           Color Transformer: AxisColor
           Axis: Z
@@ -103,13 +110,15 @@ Visualization Manager:
 
         - Class: rviz_default_plugins/DepthCloud
           Name: RGB-D cloud
-          Enabled: true
+          # 848x480 at 10 Hz is over four million projected points per second. Keep the RGB
+          # camera panel visible below and leave this optional 3-D view off for smooth video.
+          Enabled: false
           Topic Filter: false
           Depth Map Topic: /camera/aligned_depth_to_color/image_raw
           Depth Map Transport Hint: raw
           Color Image Topic: /camera/color/image_raw
           Color Transport Hint: raw
-          Queue Size: 5
+          Queue Size: 1
           Style: Points
           Size (Pixels): 3
           Alpha: 0.8
@@ -121,7 +130,7 @@ Visualization Manager:
           Enabled: true
           Topic:
             Value: /camera/color/image_raw
-            Depth: 5
+            Depth: 1
             Durability Policy: Volatile
             Reliability Policy: Best Effort
           Normalize Range: true

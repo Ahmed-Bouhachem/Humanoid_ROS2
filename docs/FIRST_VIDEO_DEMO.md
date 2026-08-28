@@ -60,6 +60,15 @@ sudo apt install ros-jazzy-pick-ik ros-jazzy-moveit-ros-perception
 Use a 1920 x 1080 desktop and record RViz at 30 or 60 FPS. Close applications that display
 personal information and keep the launch terminal outside the capture crop.
 
+The launcher automatically selects an NVIDIA discrete GPU through PRIME offload when one is
+available and prints the selected graphics mode. The recording view keeps the live LiDAR and RGB
+camera enabled, while the much heavier RGB-D point cloud, duplicate MoveIt octomap geometry, and
+trajectory mesh trail are disabled by default. Collision checking and trajectory animation remain
+active. The MuJoCo viewer is capped at 30 FPS so it cannot monopolise a high-refresh GPU; physics
+and controller rates are not capped. To use the desktop's current renderer instead, launch with
+`G1_DEMO_GPU=desktop`. Override the viewer cap only when needed, for example with
+`GROVE_G1_VIEWER_FPS=60`.
+
 Terminal A:
 
 ```bash

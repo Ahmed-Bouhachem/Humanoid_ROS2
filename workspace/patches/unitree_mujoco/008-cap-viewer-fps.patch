@@ -1,0 +1,67 @@
+Cap only the MuJoCo viewer on high-refresh displays
+
+Generated against unitree_mujoco ae6a8403e272733e9996ef59990880330496177f, on top of
+001, 004, and 005 (whose main.cc context this diff includes).
+
+MuJoCo's visualiser enables GLFW VSync with swap interval 1. On a 240 Hz laptop that asks the
+viewer to draw 240 complete scenes per second. During the integrated recording demo this used
+86 percent of an RTX 5060 by itself, saturated the GPU, and left RViz at 2-3 FPS.
+
+GROVE_G1_VIEWER_FPS selects a larger swap interval derived from the monitor refresh rate. It
+affects the render thread only: PhysicsLoop retains its real-time synchronisation, the bridge
+stays at 1 kHz, the policy at 50 Hz, and the simulated sensors keep their configured rates.
+With the variable absent, the upstream SetVSync implementation is used unchanged.
+
+--- a/simulate/src/main.cc
++++ b/simulate/src/main.cc
+@@ -18,6 +18,7 @@
+ #undef private
+ 
+ #include <chrono>
++#include <algorithm>
+ #include <cstdint>
+ #include <cstdio>
+ #include <cstdlib>
+@@ -42,6 +43,33 @@
+ #define MUJOCO_PLUGIN_DIR "mujoco_plugin"
+ #define NUM_MOTOR_IDL_GO 20
+ 
++// Keep the visualiser from monopolising a high-refresh GPU. This changes only buffer swaps;
++// physics stays on its own real-time-synchronised thread.
++class G1GlfwAdapter : public mujoco::GlfwAdapter
++{
++public:
++  void SetVSync(bool enabled) override
++  {
++    const char *target_text = std::getenv("GROVE_G1_VIEWER_FPS");
++    char *end = nullptr;
++    const long target_fps = target_text ? std::strtol(target_text, &end, 10) : 0;
++    if (enabled && target_text && end != target_text && *end == '\0' && target_fps > 0)
++    {
++      GLFWmonitor *monitor = glfwGetPrimaryMonitor();
++      const GLFWvidmode *mode = monitor ? glfwGetVideoMode(monitor) : nullptr;
++      const int refresh_hz = mode && mode->refreshRate > 0 ? mode->refreshRate : 60;
++      const int interval = std::max(1, (refresh_hz + static_cast<int>(target_fps) - 1) /
++                                           static_cast<int>(target_fps));
++      glfwSwapInterval(interval);
++      std::fprintf(stderr,
++                   "[grove_g1] viewer capped near %ld FPS (%d Hz display, swap interval %d)\n",
++                   target_fps, refresh_hz, interval);
++      return;
++    }
++    mujoco::GlfwAdapter::SetVSync(enabled);
++  }
++};
++
+ extern "C"
+ {
+ #if defined(_WIN32) || defined(__CYGWIN__)
+@@ -698,7 +728,7 @@ int main(int argc, char **argv)
+ 
+   // simulate object encapsulates the UI
+   auto sim = std::make_unique<mj::Simulate>(
+-    std::make_unique<mj::GlfwAdapter>(),
++    std::make_unique<G1GlfwAdapter>(),
+     &cam, &opt, &pert, /* is_passive = */ false);
+ 
+   std::thread unitree_thread(UnitreeSdk2BridgeThread, nullptr);
