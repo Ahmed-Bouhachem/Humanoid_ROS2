@@ -1,0 +1,189 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Video Demo1
+        - /Video Demo1/LiDAR1
+        - /MotionPlanning1
+      Splitter Ratio: 0.52
+    Tree Height: 740
+  - Class: moveit_rviz_plugin/MotionPlanning
+    Name: MotionPlanning
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Name: root
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Ground grid
+      Enabled: true
+      Cell Size: 1
+      Plane Cell Count: 30
+      Alpha: 0.35
+      Color: 110; 115; 125
+
+    - Class: moveit_rviz_plugin/MotionPlanning
+      Name: MotionPlanning
+      Enabled: true
+      Move Group Namespace: ""
+      Robot Description: robot_description
+      Planning Scene Topic: /monitored_planning_scene
+      Planning Request:
+        Planning Group: both_arms
+        Colliding Link Color: 255; 0; 0
+        Goal State Alpha: 0.75
+        Goal State Color: 255; 140; 0
+        Interactive Marker Size: 0.15
+        Query Goal State: false
+        Query Start State: false
+        Show Workspace: false
+        Start State Alpha: 0.3
+        Start State Color: 0; 255; 0
+      Planned Path:
+        Trajectory Topic: /display_planned_path
+        Loop Animation: false
+        Show Robot Collision: false
+        Show Robot Visual: true
+        Show Trail: true
+        State Display Time: 0.05 s
+        Trail Step Size: 5
+        Interrupt Display: false
+      Scene Geometry:
+        Scene Alpha: 0.25
+        Show Scene Geometry: true
+        Voxel Rendering: Occupied Voxels
+      Scene Robot:
+        Attached Body Color: 150; 50; 150
+        Robot Alpha: 1
+        Show Robot Collision: false
+        Show Robot Visual: true
+
+    - Class: rviz_common/Group
+      Name: Video Demo
+      Enabled: true
+      Displays:
+        - Class: rviz_default_plugins/MarkerArray
+          Name: Chapter + telemetry
+          Enabled: true
+          Topic:
+            Value: /g1_video_demo/stage_markers
+            Depth: 1
+            Durability Policy: Transient Local
+            Reliability Policy: Reliable
+
+        - Class: rviz_default_plugins/Path
+          Name: Walking trail
+          Enabled: true
+          Topic:
+            Value: /g1_video_demo/path
+            Depth: 1
+            Durability Policy: Transient Local
+            Reliability Policy: Reliable
+          Line Style: Lines
+          Line Width: 0.045
+          Color: 0; 255; 190
+          Alpha: 1
+
+        - Class: rviz_default_plugins/PointCloud2
+          Name: LiDAR
+          Enabled: true
+          Topic:
+            Value: /livox/lidar
+            Depth: 5
+            Durability Policy: Volatile
+            Reliability Policy: Best Effort
+          Style: Flat Squares
+          Size (Pixels): 3
+          Alpha: 0.85
+          Decay Time: 1.5
+          Position Transformer: XYZ
+          Color Transformer: AxisColor
+          Axis: Z
+          Autocompute Intensity Bounds: true
+
+        - Class: rviz_default_plugins/DepthCloud
+          Name: RGB-D cloud
+          Enabled: true
+          Topic Filter: false
+          Depth Map Topic: /camera/aligned_depth_to_color/image_raw
+          Depth Map Transport Hint: raw
+          Color Image Topic: /camera/color/image_raw
+          Color Transport Hint: raw
+          Queue Size: 5
+          Style: Points
+          Size (Pixels): 3
+          Alpha: 0.8
+          Decay Time: 0.5
+          Color Transformer: RGB8
+
+        - Class: rviz_default_plugins/Image
+          Name: Depth camera
+          Enabled: true
+          Topic:
+            Value: /camera/color/image_raw
+            Depth: 5
+            Durability Policy: Volatile
+            Reliability Policy: Best Effort
+          Normalize Range: true
+
+        - Class: rviz_default_plugins/Odometry
+          Name: Ground-truth odometry
+          Enabled: true
+          Topic:
+            Value: /g1_odometry_publisher/odom
+            Depth: 20
+            Durability Policy: Volatile
+            Reliability Policy: Reliable
+          Keep: 40
+          Position Tolerance: 0.08
+          Angle Tolerance: 0.08
+          Shape:
+            Value: Arrow
+            Alpha: 1
+            Color: 255; 90; 20
+            Shaft Length: 0.25
+            Shaft Radius: 0.025
+            Head Length: 0.08
+            Head Radius: 0.05
+
+        - Class: rviz_default_plugins/TF
+          Name: TF frames
+          Enabled: false
+          Show Names: false
+          Show Axes: true
+          Show Arrows: false
+          Marker Scale: 0.25
+
+  Global Options:
+    Background Color: 18; 22; 30
+    Fixed Frame: odom
+    Frame Rate: 30
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Name: Follow G1
+      Distance: 4.2
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0.8
+      Pitch: 0.30
+      Yaw: 3.75
+      Target Frame: pelvis
+      Near Clip Distance: 0.01
+Window Geometry:
+  Height: 1000
+  Width: 1600
+  Displays:
+    collapsed: false
+  MotionPlanning:
+    collapsed: false
+  Views:
+    collapsed: true

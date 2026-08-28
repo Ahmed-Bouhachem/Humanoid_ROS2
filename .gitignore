@@ -4,6 +4,7 @@ workspace/install/
 workspace/log/
 /log/
 .native/
+.native
 
 # Workspace lint configuration paths are committed relative symlinks to the
 # repository-root files.

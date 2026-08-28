@@ -1,0 +1,419 @@
+#!/usr/bin/env python3
+"""Operator-triggered walking, sensing, MoveIt, and hand demo for MuJoCo only."""
+
+import math
+import os
+import re
+import time
+import xml.etree.ElementTree as ET
+
+from ament_index_python.packages import get_package_share_directory
+from controller_manager_msgs.srv import ListControllers
+from geometry_msgs.msg import PoseStamped, Twist
+from moveit_msgs.action import ExecuteTrajectory, MoveGroup
+from moveit_msgs.msg import Constraints, JointConstraint, RobotState
+from nav_msgs.msg import Odometry, Path
+import rclpy
+from rclpy.action import ActionClient
+from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
+from sensor_msgs.msg import Imu, JointState, PointCloud2
+from std_msgs.msg import String
+from std_srvs.srv import Trigger
+from visualization_msgs.msg import Marker, MarkerArray
+
+
+SUCCESS = 1
+MIN_UPRIGHT_Z = 0.64
+EXPECTED_JOINTS = 43
+
+
+class DemoError(RuntimeError):
+    """A checked demo precondition or motion failed."""
+
+
+class FirstVideoDemo(Node):
+    def __init__(self):
+        super().__init__("g1_video_demo")
+        self.auto_start = self.declare_parameter("auto_start", False).value
+        requested_scale = float(self.declare_parameter("speed_scale", 1.0).value)
+        self.speed_scale = min(max(requested_scale, 0.5), 1.25)
+
+        self.started = False
+        self.running = False
+        self.stage = "STARTING SIMULATION"
+        self.joints = {}
+        self.limits = {}
+        self.imu = None
+        self.cloud_points = 0
+        self.odom = None
+        self.last_path_sample = None
+        self.distance_m = 0.0
+        self.path = Path()
+        self.path.header.frame_id = "odom"
+
+        durable = QoSProfile(
+            depth=1,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=ReliabilityPolicy.RELIABLE,
+        )
+        self.cmd_pub = self.create_publisher(Twist, "/cmd_vel", 10)
+        self.marker_pub = self.create_publisher(
+            MarkerArray, "/g1_video_demo/stage_markers", durable
+        )
+        self.status_pub = self.create_publisher(String, "/g1_video_demo/status", durable)
+        self.path_pub = self.create_publisher(Path, "/g1_video_demo/path", durable)
+
+        self.create_subscription(JointState, "/joint_states", self._on_joints, 50)
+        self.create_subscription(
+            Imu, "/imu_sensor_broadcaster/imu", self._on_imu, qos_profile_sensor_data
+        )
+        self.create_subscription(
+            PointCloud2, "/livox/lidar", self._on_cloud, qos_profile_sensor_data
+        )
+        self.create_subscription(
+            Odometry, "/g1_sensor_relay/base_state", self._on_odom, qos_profile_sensor_data
+        )
+        self.create_subscription(String, "/robot_description", self._on_description, durable)
+
+        self.move_client = ActionClient(self, MoveGroup, "/move_action")
+        self.execute_client = ActionClient(self, ExecuteTrajectory, "/execute_trajectory")
+        self.controllers = self.create_client(
+            ListControllers, "/controller_manager/list_controllers"
+        )
+        self.create_service(Trigger, "/g1_video_demo/start", self._on_start)
+        self.create_timer(0.2, self._publish_hud)
+
+        srdf_path = os.path.join(
+            get_package_share_directory("g1_moveit_config"), "config", "g1.srdf"
+        )
+        self.named_targets = self._read_named_targets(srdf_path)
+
+    @staticmethod
+    def _read_named_targets(path):
+        root = ET.parse(path).getroot()
+        targets = {}
+        for state in root.findall("group_state"):
+            key = (state.attrib["group"], state.attrib["name"])
+            targets[key] = {
+                joint.attrib["name"]: float(joint.attrib["value"])
+                for joint in state.findall("joint")
+            }
+        return targets
+
+    @staticmethod
+    def assert_simulation_is_loopback_only():
+        uri = os.environ.get("CYCLONEDDS_URI", "")
+        if uri.lstrip().startswith("<"):
+            contents = uri
+        else:
+            path = uri.removeprefix("file://")
+            try:
+                with open(path, encoding="utf-8") as handle:
+                    contents = handle.read()
+            except OSError as exc:
+                raise DemoError("CYCLONEDDS_URI is not a readable simulation profile") from exc
+        if 'NetworkInterface name="lo"' not in contents:
+            raise DemoError(
+                "refusing to command motion: CycloneDDS is not restricted to loopback 'lo'"
+            )
+
+    def _on_start(self, _request, response):
+        if self.running:
+            response.success = False
+            response.message = "the demo is already running"
+        elif self.started:
+            response.success = False
+            response.message = "the one-shot demo has already completed"
+        elif self.stage != "READY TO RECORD":
+            response.success = False
+            response.message = f"not ready yet: {self.stage}"
+        else:
+            self.started = True
+            response.success = True
+            response.message = "demo accepted; the sequence is starting"
+        return response
+
+    def _on_joints(self, msg):
+        self.joints.update(zip(msg.name, msg.position))
+
+    def _on_imu(self, msg):
+        self.imu = msg
+
+    def _on_cloud(self, msg):
+        self.cloud_points = msg.width * msg.height
+
+    def _on_description(self, msg):
+        for name, lower, upper in re.findall(
+            r'<joint name="([^"]+)" type="revolute">.*?'
+            r'<limit[^>]*lower="([^"]+)"[^>]*upper="([^"]+)"',
+            msg.data,
+            re.S,
+        ):
+            self.limits[name] = (float(lower), float(upper))
+
+    def _on_odom(self, msg):
+        self.odom = msg
+        point = msg.pose.pose.position
+        if self.last_path_sample is not None:
+            dx = point.x - self.last_path_sample[0]
+            dy = point.y - self.last_path_sample[1]
+            step = math.hypot(dx, dy)
+            if step < 0.02:
+                return
+            self.distance_m += step
+        self.last_path_sample = (point.x, point.y)
+        pose = msg.pose
+        stamped = PoseStamped()
+        stamped.header = msg.header
+        stamped.pose = pose.pose
+        self.path.header.stamp = msg.header.stamp
+        self.path.poses.append(stamped)
+        self.path.poses = self.path.poses[-500:]
+        self.path_pub.publish(self.path)
+
+    def _uprightness(self):
+        if self.imu is None:
+            return 0.0
+        q = self.imu.orientation
+        return 1.0 - 2.0 * (q.x * q.x + q.y * q.y)
+
+    def _publish_hud(self):
+        now = self.get_clock().now().to_msg()
+        markers = MarkerArray()
+        for marker_id, text, height, scale, color in (
+            (0, self.stage, 2.15, 0.16, (0.15, 0.85, 1.0)),
+            (
+                1,
+                f"IMU upright {self._uprightness():.2f}  |  "
+                f"LiDAR {self.cloud_points:,} pts  |  path {self.distance_m:.1f} m",
+                1.93,
+                0.085,
+                (0.85, 0.95, 1.0),
+            ),
+        ):
+            marker = Marker()
+            marker.header.frame_id = "pelvis"
+            marker.header.stamp = now
+            marker.ns = "g1_video_demo"
+            marker.id = marker_id
+            marker.type = Marker.TEXT_VIEW_FACING
+            marker.action = Marker.ADD
+            marker.pose.orientation.w = 1.0
+            marker.pose.position.z = height
+            marker.scale.z = scale
+            marker.color.r, marker.color.g, marker.color.b = color
+            marker.color.a = 1.0
+            marker.text = text
+            markers.markers.append(marker)
+        self.marker_pub.publish(markers)
+        self.status_pub.publish(String(data=self.stage))
+
+    def _set_stage(self, text, pause_s=0.0):
+        self.stage = text
+        self.get_logger().info(f"=== {text} ===")
+        self._publish_hud()
+        if pause_s:
+            self._spin_for(pause_s)
+
+    def _spin_for(self, seconds):
+        deadline = time.monotonic() + seconds
+        while rclpy.ok() and time.monotonic() < deadline:
+            rclpy.spin_once(self, timeout_sec=0.05)
+
+    def _wait_until(self, predicate, timeout_s, message):
+        deadline = time.monotonic() + timeout_s
+        while rclpy.ok() and time.monotonic() < deadline:
+            rclpy.spin_once(self, timeout_sec=0.1)
+            if predicate():
+                return
+        raise DemoError(message)
+
+    def _controller_states(self):
+        if not self.controllers.wait_for_service(timeout_sec=1.0):
+            return {}
+        future = self.controllers.call_async(ListControllers.Request())
+        self._wait_until(future.done, 10.0, "controller manager did not answer")
+        return {item.name: item.state for item in future.result().controller}
+
+    def wait_until_ready(self):
+        self.assert_simulation_is_loopback_only()
+        self._set_stage("CHECKING MUJOCO + ROS 2 JAZZY")
+        self._wait_until(
+            lambda: self.odom is not None and self.cloud_points > 0 and self.imu is not None,
+            150.0,
+            "MuJoCo sensor relay, LiDAR, or IMU did not become ready",
+        )
+        self._wait_until(
+            lambda: len(self.joints) >= EXPECTED_JOINTS and bool(self.limits),
+            90.0,
+            f"MoveIt needs at least {EXPECTED_JOINTS} joint states and the robot description",
+        )
+        if not self.move_client.wait_for_server(timeout_sec=60.0):
+            raise DemoError("MoveIt's /move_action did not appear")
+        if not self.execute_client.wait_for_server(timeout_sec=30.0):
+            raise DemoError("MoveIt's /execute_trajectory did not appear")
+
+        def controllers_ready():
+            states = self._controller_states()
+            required = (
+                "agile_controller",
+                "locomotion_safety_controller",
+                "arm_trajectory_controller",
+                "left_hand_controller",
+                "right_hand_controller",
+            )
+            return all(states.get(name) == "active" for name in required)
+
+        self._wait_until(
+            controllers_ready, 90.0, "arm, hand, or locomotion controller is inactive"
+        )
+        if self._uprightness() < MIN_UPRIGHT_Z:
+            raise DemoError("the robot is not upright after startup")
+        self._set_stage("READY TO RECORD")
+        self.get_logger().info(
+            "Ready for the operator trigger. With the repository wrapper, press Enter now."
+        )
+
+    def wait_for_operator(self):
+        if self.auto_start:
+            self._spin_for(3.0)
+            self.started = True
+        else:
+            self._wait_until(lambda: self.started, 3600.0, "start request was not received")
+
+    def _publish_twist(self, vx=0.0, wz=0.0):
+        command = Twist()
+        command.linear.x = vx * self.speed_scale
+        command.angular.z = wz * self.speed_scale
+        self.cmd_pub.publish(command)
+
+    def _drive(self, label, seconds, vx=0.0, wz=0.0):
+        self._set_stage(label, 1.0)
+        deadline = time.monotonic() + seconds
+        while rclpy.ok() and time.monotonic() < deadline:
+            if self._uprightness() < MIN_UPRIGHT_Z:
+                raise DemoError(f"uprightness safety check stopped stage: {label}")
+            self._publish_twist(vx, wz)
+            rclpy.spin_once(self, timeout_sec=0.05)
+        self._publish_twist()
+        self._spin_for(1.0)
+
+    def _bounded_start_state(self):
+        state = RobotState()
+        state.is_diff = False
+        for name, position in self.joints.items():
+            lower, upper = self.limits.get(name, (position, position))
+            state.joint_state.name.append(name)
+            state.joint_state.position.append(min(max(position, lower), upper))
+        return state
+
+    def _motion_goal(self, group, target):
+        goal = MoveGroup.Goal()
+        goal.request.group_name = group
+        goal.request.num_planning_attempts = 5
+        goal.request.allowed_planning_time = 10.0
+        goal.request.max_velocity_scaling_factor = 0.35
+        goal.request.max_acceleration_scaling_factor = 0.30
+        goal.request.start_state = self._bounded_start_state()
+        constraints = Constraints()
+        for name, position in target.items():
+            joint = JointConstraint()
+            joint.joint_name = name
+            joint.position = position
+            joint.tolerance_above = 0.02
+            joint.tolerance_below = 0.02
+            joint.weight = 1.0
+            constraints.joint_constraints.append(joint)
+        goal.request.goal_constraints = [constraints]
+        goal.planning_options.plan_only = True
+        return goal
+
+    def _await_action(self, client, goal, timeout_s, name):
+        sent = client.send_goal_async(goal)
+        self._wait_until(sent.done, 20.0, f"{name} did not answer the goal request")
+        handle = sent.result()
+        if handle is None or not handle.accepted:
+            raise DemoError(f"{name} rejected its goal")
+        result = handle.get_result_async()
+        self._wait_until(result.done, timeout_s, f"{name} timed out")
+        return result.result().result
+
+    def _move_named(self, group, name, label):
+        target = self.named_targets.get((group, name))
+        if target is None:
+            raise DemoError(f"MoveIt has no named target {group}/{name}")
+        self._set_stage(label, 1.0)
+        planned = self._await_action(
+            self.move_client, self._motion_goal(group, target), 90.0, f"plan {group}/{name}"
+        )
+        if planned.error_code.val != SUCCESS:
+            raise DemoError(
+                f"planning {group}/{name} failed with MoveIt code {planned.error_code.val}"
+            )
+        execute = ExecuteTrajectory.Goal()
+        execute.trajectory = planned.planned_trajectory
+        result = self._await_action(
+            self.execute_client, execute, 90.0, f"execute {group}/{name}"
+        )
+        if result.error_code.val != SUCCESS:
+            raise DemoError(
+                f"executing {group}/{name} failed with MoveIt code {result.error_code.val}"
+            )
+        self._spin_for(0.8)
+
+    def _move_both_arms(self, target, title):
+        # Per-arm plans are intentional: this stack validates collision and controller ownership
+        # for each 7-DoF chain independently, making the public demo predictable on slower PCs.
+        self._move_named("left_arm", target, f"{title} · LEFT ARM")
+        self._move_named("right_arm", target, f"{title} · RIGHT ARM")
+
+    def _move_both_hands(self, target, title):
+        self._move_named("left_hand", target, f"{title} · LEFT HAND")
+        self._move_named("right_hand", target, f"{title} · RIGHT HAND")
+
+    def run_sequence(self):
+        self.running = True
+        try:
+            self._set_stage("01 · LIVE LIDAR + DEPTH + IMU", 4.0)
+            self._drive("02 · LEARNED GAIT · FORWARD", 5.0, vx=0.18)
+            self._drive("03 · BALANCED LEFT TURN", 4.0, wz=0.28)
+            self._drive("04 · CURVED WALK", 5.0, vx=0.13, wz=-0.18)
+            self._set_stage("05 · STABILIZING FOR MOVEIT", 3.0)
+
+            self._move_both_arms("ready", "06 · MOVEIT READY POSE")
+            self._move_both_arms("reach_front", "07 · MOVEIT FORWARD REACH")
+            self._move_both_hands("closed", "08 · DEX3 POWER GRASP")
+            self._set_stage("OBJECT GRASP DEMONSTRATION", 2.0)
+            self._move_both_hands("open", "09 · DEX3 RELEASE")
+            self._move_both_arms("carry", "10 · MOVEIT CARRY POSE")
+
+            self._drive("11 · WALKING WITH ARMS IN CARRY POSE", 4.0, vx=0.12)
+            self._drive("12 · FINAL BALANCE TURN", 3.0, wz=0.24)
+            self._move_both_arms("tucked", "13 · SAFE TUCKED POSE")
+            self._set_stage("DEMO COMPLETE · MUJOCO + ROS 2 JAZZY", 8.0)
+        finally:
+            self._publish_twist()
+            self.running = False
+
+
+def main():
+    rclpy.init()
+    node = FirstVideoDemo()
+    try:
+        node.wait_until_ready()
+        node.wait_for_operator()
+        node.run_sequence()
+    except (DemoError, KeyboardInterrupt) as exc:
+        node._publish_twist()
+        node.stage = f"DEMO STOPPED · {exc}"
+        node._publish_hud()
+        node.get_logger().error(f"demo stopped safely: {exc}")
+        node._spin_for(2.0)
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

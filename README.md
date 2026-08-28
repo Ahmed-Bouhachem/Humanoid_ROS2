@@ -25,6 +25,8 @@ platform:
 - Built and validated 14 ROS packages natively.
 - Verified MuJoCo 3.3.6, the learned locomotion policy, controller activation, Dex3 simulation,
   live IMU data, RViz startup, and `/joint_states` near 200 Hz.
+- Added an operator-triggered first-video demo that coordinates walking, turning, MoveIt arm
+  poses, Dex3 hand motion, and live sensor visualization in one simulation-only RViz view.
 - Documented the engineering work required for a future Gazebo Harmonic backend.
 
 Detailed migration notes are in [docs/JAZZY_MIGRATION.md](docs/JAZZY_MIGRATION.md). The applied
@@ -32,6 +34,8 @@ learning chapter [From `/cmd_vel` to a Humanoid Gait](docs/DEEP_RL_HUMANOID.md) 
 reinforcement learning, ONNX policy, control timing, safety architecture, and practical labs used
 by this robot. A ready-to-use recording plan and narration are in
 [docs/LINKEDIN_DEMO.md](docs/LINKEDIN_DEMO.md).
+The integrated recording workflow is documented separately in
+[docs/FIRST_VIDEO_DEMO.md](docs/FIRST_VIDEO_DEMO.md).
 
 ## What you can learn from this repository
 
@@ -264,6 +268,7 @@ ros2 launch g1_bringup bringup.launch.py \
 | `g1_moveit_config` | MoveIt planning and RViz configuration |
 | `g1_manipulation` | Pick-and-place actions |
 | `g1_orchestration` | BehaviorTree.CPP mission execution |
+| `g1_demos` | Repeatable recording demos for walking, sensors, MoveIt, and Dex3 hands |
 | `g1_locomotion`, `g1_msgs` | Base approach actions and project interfaces |
 
 ## Safety
