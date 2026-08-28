@@ -4,7 +4,7 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
@@ -45,21 +45,26 @@ def generate_launch_description():
             default_value="1.0",
             description="Scale walking velocity, clamped by the demo to 0.5 through 1.25.",
         ),
-        _launch(
-            "g1_bringup",
-            "bringup.launch.py",
-            mode="none",
-            nav="false",
-            rviz="false",
-            moveit="true",
-            manipulation="false",
-            activate_arm="true",
-            activate_arm_delay_s="30.0",
-            sensors="true",
-            odometry="ground_truth",
-            world="navigation",
-            headless=LaunchConfiguration("headless"),
-            pin_pelvis="false",
+        # Scope the child's `rviz:=false`: without this, it shadows this launch file's own
+        # `rviz:=true` before the custom MoveIt recording view is evaluated.
+        GroupAction(
+            scoped=True,
+            actions=[_launch(
+                "g1_bringup",
+                "bringup.launch.py",
+                mode="none",
+                nav="false",
+                rviz="false",
+                moveit="true",
+                manipulation="false",
+                activate_arm="true",
+                activate_arm_delay_s="30.0",
+                sensors="true",
+                odometry="ground_truth",
+                world="navigation",
+                headless=LaunchConfiguration("headless"),
+                pin_pelvis="false",
+            )],
         ),
         _launch(
             "g1_moveit_config",

@@ -404,15 +404,21 @@ def main():
         node.wait_until_ready()
         node.wait_for_operator()
         node.run_sequence()
-    except (DemoError, KeyboardInterrupt) as exc:
-        node._publish_twist()
+    except DemoError as exc:
+        if rclpy.ok():
+            node._publish_twist()
         node.stage = f"DEMO STOPPED · {exc}"
-        node._publish_hud()
+        if rclpy.ok():
+            node._publish_hud()
         node.get_logger().error(f"demo stopped safely: {exc}")
-        node._spin_for(2.0)
+        if rclpy.ok():
+            node._spin_for(2.0)
+    except KeyboardInterrupt:
+        pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

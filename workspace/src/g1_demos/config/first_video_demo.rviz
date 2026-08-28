@@ -8,8 +8,6 @@ Panels:
         - /MotionPlanning1
       Splitter Ratio: 0.52
     Tree Height: 740
-  - Class: moveit_rviz_plugin/MotionPlanning
-    Name: MotionPlanning
   - Class: rviz_common/Views
     Name: Views
 Visualization Manager:
@@ -182,8 +180,6 @@ Window Geometry:
   Height: 1000
   Width: 1600
   Displays:
-    collapsed: false
-  MotionPlanning:
     collapsed: false
   Views:
     collapsed: true
