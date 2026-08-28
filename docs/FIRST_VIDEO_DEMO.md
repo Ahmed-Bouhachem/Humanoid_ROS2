@@ -67,7 +67,8 @@ cd ~/humainoid_ws/g1-ros2-jazzy
 ./scripts/first-video-demo.sh
 ```
 
-The launch may need roughly 30–60 seconds on the first run. It automatically waits for MuJoCo,
+The launch opens both MuJoCo and RViz and may need roughly 30–60 seconds on the first run. It
+automatically waits for MuJoCo,
 MoveIt, the controllers, LiDAR, IMU, odometry, and all 43 joint states. Do not start the take while
 the label says `CHECKING MUJOCO + ROS 2 JAZZY`.
 
@@ -78,16 +79,17 @@ network namespace.
 The call is one-shot. If you need another take, stop and relaunch the stack so the robot starts at
 the same pose and the walking trail begins empty.
 
-To include the MuJoCo window as a second visual angle:
+To keep the MuJoCo viewer hidden and record only RViz, install `Xvfb` and use headless mode:
 
 ```bash
-./scripts/first-video-demo.sh headless:=false
+sudo apt install xvfb
+./scripts/first-video-demo.sh headless:=true
 ```
 
 For a slower machine, keep MuJoCo headless and reduce the gait speed, not the ROS clock:
 
 ```bash
-./scripts/first-video-demo.sh speed_scale:=0.8
+./scripts/first-video-demo.sh headless:=true speed_scale:=0.8
 ```
 
 After the take, press `Ctrl+C` in Terminal A and clean any process left by an interrupted GUI:

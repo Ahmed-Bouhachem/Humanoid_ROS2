@@ -27,8 +27,8 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             "headless",
-            default_value="true",
-            description="Keep true for an RViz-only recording; false also opens MuJoCo.",
+            default_value="false",
+            description="False opens MuJoCo and RViz for recording; true needs Xvfb.",
         ),
         DeclareLaunchArgument(
             "auto_start",
