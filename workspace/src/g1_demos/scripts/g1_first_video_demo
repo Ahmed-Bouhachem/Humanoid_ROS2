@@ -289,16 +289,83 @@ class FirstVideoDemo(Node):
         command.angular.z = wz * self.speed_scale
         self.cmd_pub.publish(command)
 
+    def _check_upright(self, label):
+        if self._uprightness() < MIN_UPRIGHT_Z:
+            raise DemoError(f"uprightness safety check stopped stage: {label}")
+
+    def _position(self):
+        point = self.odom.pose.pose.position
+        return point.x, point.y
+
+    def _yaw(self):
+        q = self.odom.pose.pose.orientation
+        sin_yaw = 2.0 * (q.w * q.z + q.x * q.y)
+        cos_yaw = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        return math.atan2(sin_yaw, cos_yaw)
+
+    @staticmethod
+    def _wrapped_angle(angle):
+        return (angle + math.pi) % (2.0 * math.pi) - math.pi
+
     def _drive(self, label, seconds, vx=0.0, wz=0.0):
         self._set_stage(label, 1.0)
         deadline = time.monotonic() + seconds
         while rclpy.ok() and time.monotonic() < deadline:
-            if self._uprightness() < MIN_UPRIGHT_Z:
-                raise DemoError(f"uprightness safety check stopped stage: {label}")
+            self._check_upright(label)
             self._publish_twist(vx, wz)
             rclpy.spin_once(self, timeout_sec=0.05)
         self._publish_twist()
         self._spin_for(1.0)
+
+    def _drive_distance(self, label, distance_m, vx=0.18):
+        """Walk a repeatable odometry-measured leg instead of assuming policy speed."""
+        self._set_stage(label, 0.8)
+        start_x, start_y = self._position()
+        command_speed = abs(vx * self.speed_scale)
+        timeout_s = distance_m / max(command_speed, 0.05) * 3.0 + 5.0
+        deadline = time.monotonic() + timeout_s
+        progress = 0.0
+        while rclpy.ok() and time.monotonic() < deadline:
+            self._check_upright(label)
+            x, y = self._position()
+            progress = math.hypot(x - start_x, y - start_y)
+            if progress >= distance_m:
+                break
+            self._publish_twist(vx=vx)
+            rclpy.spin_once(self, timeout_sec=0.05)
+        self._publish_twist()
+        self._spin_for(1.0)
+        if progress < distance_m:
+            raise DemoError(
+                f"walking stage timed out at {progress:.2f} of {distance_m:.2f} m: {label}"
+            )
+
+    def _turn_angle(self, label, degrees, speed=0.30):
+        """Accumulate wrapped odometry yaw so 90/180 degree turns stop consistently."""
+        self._set_stage(label, 0.8)
+        direction = 1.0 if degrees >= 0.0 else -1.0
+        target = math.radians(abs(degrees))
+        command_wz = direction * abs(speed)
+        command_speed = abs(command_wz * self.speed_scale)
+        deadline = time.monotonic() + target / max(command_speed, 0.05) * 4.0 + 5.0
+        previous_yaw = self._yaw()
+        accumulated = 0.0
+        while rclpy.ok() and time.monotonic() < deadline:
+            self._check_upright(label)
+            current_yaw = self._yaw()
+            accumulated += self._wrapped_angle(current_yaw - previous_yaw)
+            previous_yaw = current_yaw
+            if direction * accumulated >= target:
+                break
+            self._publish_twist(wz=command_wz)
+            rclpy.spin_once(self, timeout_sec=0.05)
+        self._publish_twist()
+        self._spin_for(1.0)
+        if direction * accumulated < target:
+            actual = math.degrees(abs(accumulated))
+            raise DemoError(
+                f"turn timed out at {actual:.0f} of {abs(degrees):.0f} degrees: {label}"
+            )
 
     def _bounded_start_state(self):
         state = RobotState()
@@ -377,21 +444,30 @@ class FirstVideoDemo(Node):
         self.running = True
         try:
             self._set_stage("01 · LIVE LIDAR + DEPTH + IMU", 4.0)
-            self._drive("02 · LEARNED GAIT · FORWARD", 5.0, vx=0.18)
-            self._drive("03 · BALANCED LEFT TURN", 4.0, wz=0.28)
-            self._drive("04 · CURVED WALK", 5.0, vx=0.13, wz=-0.18)
-            self._set_stage("05 · STABILIZING FOR MOVEIT", 3.0)
+            # A 1.15 m square stays inside the facility's unobstructed 4 m central crossing.
+            # Odometry, rather than wall time, closes each leg and turn so the take is repeatable.
+            self._drive_distance("02 · SQUARE PATH · LEG 1/4", 1.15, vx=0.20)
+            self._turn_angle("03 · ODOMETRY TURN · 90° LEFT", 90.0)
+            self._drive_distance("04 · SQUARE PATH · LEG 2/4", 1.15, vx=0.20)
+            self._turn_angle("05 · ODOMETRY TURN · 90° LEFT", 90.0)
+            self._drive_distance("06 · SQUARE PATH · LEG 3/4", 1.15, vx=0.20)
+            self._turn_angle("07 · ODOMETRY TURN · 90° LEFT", 90.0)
+            self._drive_distance("08 · SQUARE PATH · LEG 4/4", 1.15, vx=0.20)
+            self._turn_angle("09 · SQUARE COMPLETE · HEADING HOME", 90.0)
+            self._drive("10 · CURVED SENSOR SWEEP", 5.0, vx=0.13, wz=-0.18)
+            self._set_stage("11 · STABILIZING FOR MOVEIT", 3.0)
 
-            self._move_both_arms("ready", "06 · MOVEIT READY POSE")
-            self._move_both_arms("reach_front", "07 · MOVEIT FORWARD REACH")
-            self._move_both_hands("closed", "08 · DEX3 POWER GRASP")
+            self._move_both_arms("ready", "12 · MOVEIT READY POSE")
+            self._move_both_arms("reach_front", "13 · MOVEIT FORWARD REACH")
+            self._move_both_hands("closed", "14 · DEX3 POWER GRASP")
             self._set_stage("OBJECT GRASP DEMONSTRATION", 2.0)
-            self._move_both_hands("open", "09 · DEX3 RELEASE")
-            self._move_both_arms("carry", "10 · MOVEIT CARRY POSE")
+            self._move_both_hands("open", "15 · DEX3 RELEASE")
+            self._move_both_arms("carry", "16 · MOVEIT CARRY POSE")
 
-            self._drive("11 · WALKING WITH ARMS IN CARRY POSE", 4.0, vx=0.12)
-            self._drive("12 · FINAL BALANCE TURN", 3.0, wz=0.24)
-            self._move_both_arms("tucked", "13 · SAFE TUCKED POSE")
+            self._drive_distance("17 · CARRY WALK · OUTBOUND", 0.80, vx=0.16)
+            self._turn_angle("18 · CARRY POSE · 180° TURN", 180.0, speed=0.32)
+            self._drive_distance("19 · CARRY WALK · RETURN", 0.80, vx=0.16)
+            self._move_both_arms("tucked", "20 · SAFE TUCKED POSE")
             self._set_stage("DEMO COMPLETE · MUJOCO + ROS 2 JAZZY", 8.0)
         finally:
             self._publish_twist()

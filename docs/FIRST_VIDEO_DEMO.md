@@ -23,21 +23,14 @@ flowchart LR
     M --> R
 ```
 
-The chapters are:
+The chapters are grouped into three parts:
 
-1. live LiDAR, depth, and IMU check;
-2. learned forward gait;
-3. balanced turn;
-4. curved walking command;
-5. stop and stabilize;
-6. MoveIt ready pose;
-7. forward reach;
-8. Dex3 power grasp;
-9. hand release;
-10. carry pose;
-11. walking with the arms held in the carry pose;
-12. final balance turn;
-13. safe arm tuck and closing frame.
+1. live LiDAR, depth, IMU, and odometry check;
+2. an odometry-measured 4.6 m square with four 90-degree balance turns;
+3. a curved sensor sweep and stabilization;
+4. MoveIt ready pose, forward reach, and Dex3 grasp/release;
+5. a carry pose, 0.8 m outbound walk, 180-degree turn, and 0.8 m return walk;
+6. safe arm tuck and closing frame.
 
 ## Build once
 
@@ -60,14 +53,14 @@ sudo apt install ros-jazzy-pick-ik ros-jazzy-moveit-ros-perception
 Use a 1920 x 1080 desktop and record RViz at 30 or 60 FPS. Close applications that display
 personal information and keep the launch terminal outside the capture crop.
 
-The launcher automatically selects an NVIDIA discrete GPU through PRIME offload when one is
-available and prints the selected graphics mode. The recording view keeps the live LiDAR and RGB
-camera enabled, while the much heavier RGB-D point cloud, duplicate MoveIt octomap geometry, and
-trajectory mesh trail are disabled by default. Collision checking and trajectory animation remain
-active. The MuJoCo viewer is capped at 30 FPS so it cannot monopolise a high-refresh GPU; physics
-and controller rates are not capped. To use the desktop's current renderer instead, launch with
-`G1_DEMO_GPU=desktop`. Override the viewer cap only when needed, for example with
-`GROVE_G1_VIEWER_FPS=60`.
+On a hybrid NVIDIA/AMD laptop, the launcher puts RViz on NVIDIA PRIME and MuJoCo on AMD Mesa
+hardware acceleration. This avoids stale GLFW/GLX compositor buffers while keeping both windows
+on a GPU. The recording view keeps the live LiDAR and RGB camera enabled, while the much heavier
+RGB-D point cloud, duplicate MoveIt octomap geometry, and trajectory mesh trail are disabled by
+default. Collision checking and trajectory animation remain active. The MuJoCo viewer is capped
+at 30 FPS so it cannot monopolise a high-refresh GPU; physics and controller rates are not capped.
+To use the desktop's current renderer for RViz, launch with `G1_DEMO_GPU=desktop`. Override the
+viewer cap only when needed, for example with `GROVE_G1_VIEWER_FPS=60`.
 
 Terminal A:
 

@@ -8,6 +8,7 @@ drivers: they coordinate existing locomotion, MoveIt, controller, and sensor int
 `first_video_demo.launch.py` creates one recording view containing:
 
 - the MuJoCo G1 walking under the learned locomotion policy;
+- an odometry-measured square route, 90-degree turns, and an outbound/return carry walk;
 - MoveIt arm planning and trajectory trails;
 - Dex3 hand open/close motion;
 - live LiDAR and RGB-D point clouds;
