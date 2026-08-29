@@ -6,15 +6,16 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(dirname -- "${script_dir}")"
 
-# Prefer the discrete NVIDIA GPU for both RViz and MuJoCo. On hybrid laptops the desktop's
-# current renderer can change between sessions, so make PRIME offload explicit instead of
-# relying on whichever GPU happens to own DISPLAY. Set G1_DEMO_GPU=desktop to opt out.
+# Prefer the discrete NVIDIA GPU for RViz. On this hybrid laptop MuJoCo's older GLFW/GLX
+# presentation path can expose stale compositor buffers with the NVIDIA driver, so MuJoCo is
+# sent to the AMD Mesa renderer separately below. Both paths remain hardware accelerated.
+# Set G1_DEMO_GPU=desktop to opt out of the explicit NVIDIA selection.
 gpu_mode="${G1_DEMO_GPU:-auto}"
+gpu_inventory=""
+if command -v switcherooctl >/dev/null 2>&1; then
+  gpu_inventory="$(switcherooctl list 2>/dev/null || true)"
+fi
 if [[ "${gpu_mode}" == "auto" ]]; then
-  gpu_inventory=""
-  if command -v switcherooctl >/dev/null 2>&1; then
-    gpu_inventory="$(switcherooctl list 2>/dev/null || true)"
-  fi
   if [[ "${gpu_inventory}" == *"NVIDIA Corporation"* ]]; then
     gpu_mode="nvidia"
   else
@@ -28,9 +29,26 @@ if [[ "${gpu_mode}" == "nvidia" ]]; then
   export __VK_LAYER_NV_optimus=NVIDIA_only
 fi
 export G1_DEMO_GPU="${gpu_mode}"
+
+# These variables are consumed only by the MuJoCo ExecuteProcess environment in sim.launch.py;
+# RViz keeps the NVIDIA variables above. DRI_PRIME=1 avoids hard-coding a PCI address.
+mujoco_gpu="${G1_MUJOCO_GPU:-auto}"
+if [[ "${mujoco_gpu}" == "auto" ]]; then
+  if [[ "${gpu_inventory}" == *"Advanced Micro Devices"* ]]; then
+    mujoco_gpu="amd"
+  else
+    mujoco_gpu="inherit"
+  fi
+fi
+if [[ "${mujoco_gpu}" == "amd" ]]; then
+  export G1_MUJOCO_GLX_VENDOR_LIBRARY_NAME=mesa
+  export G1_MUJOCO_DRI_PRIME=1
+fi
+export G1_MUJOCO_GPU="${mujoco_gpu}"
+
 # The MuJoCo viewer follows the panel refresh rate by default. On a 240 Hz laptop it can
 # consume the entire GPU while RViz receives only a few frames. The patched viewer converts
-# this target into a GLFW swap interval; physics, controller, and sensor rates are untouched.
+# this target into a render-thread timer; physics, controller, and sensor rates are untouched.
 export GROVE_G1_VIEWER_FPS="${GROVE_G1_VIEWER_FPS:-30}"
 
 if [[ "${G1_DEMO_NETNS:-0}" != "1" ]]; then
@@ -47,9 +65,14 @@ ip link set lo up
 source "${repo_root}/scripts/native-env.sh"
 
 if [[ "${G1_DEMO_GPU}" == "nvidia" ]]; then
-  printf 'Graphics: NVIDIA PRIME offload enabled for MuJoCo and RViz.\n'
+  printf 'RViz graphics: NVIDIA PRIME offload enabled.\n'
 else
-  printf 'Graphics: desktop default (set G1_DEMO_GPU=nvidia to force NVIDIA).\n'
+  printf 'RViz graphics: desktop default (set G1_DEMO_GPU=nvidia to force NVIDIA).\n'
+fi
+if [[ "${G1_MUJOCO_GPU}" == "amd" ]]; then
+  printf 'MuJoCo graphics: AMD Mesa hardware acceleration (stable GLFW/GLX path).\n'
+else
+  printf 'MuJoCo graphics: inherited from the desktop/RViz environment.\n'
 fi
 printf 'MuJoCo viewer cap: %s FPS (physics remains real-time).\n' "${GROVE_G1_VIEWER_FPS}"
 

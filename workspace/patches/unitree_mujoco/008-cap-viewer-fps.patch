@@ -7,22 +7,16 @@ MuJoCo's visualiser enables GLFW VSync with swap interval 1. On a 240 Hz laptop 
 viewer to draw 240 complete scenes per second. During the integrated recording demo this used
 86 percent of an RTX 5060 by itself, saturated the GPU, and left RViz at 2-3 FPS.
 
-GROVE_G1_VIEWER_FPS selects a larger swap interval derived from the monitor refresh rate. It
+GROVE_G1_VIEWER_FPS paces the render loop with a steady-clock timer while keeping GLFW's normal
+VSync interval of 1. Larger swap intervals were tried first, but NVIDIA GLX on X11 sometimes
+presented a stale compositor buffer containing pixels from a window behind MuJoCo. The timer
 affects the render thread only: PhysicsLoop retains its real-time synchronisation, the bridge
 stays at 1 kHz, the policy at 50 Hz, and the simulated sensors keep their configured rates.
-With the variable absent, the upstream SetVSync implementation is used unchanged.
+With the variable absent, the upstream behaviour is used unchanged.
 
 --- a/simulate/src/main.cc
 +++ b/simulate/src/main.cc
-@@ -18,6 +18,7 @@
- #undef private
- 
- #include <chrono>
-+#include <algorithm>
- #include <cstdint>
- #include <cstdio>
- #include <cstdlib>
-@@ -42,6 +43,33 @@
+@@ -42,6 +42,59 @@
  #define MUJOCO_PLUGIN_DIR "mujoco_plugin"
  #define NUM_MOTOR_IDL_GO 20
  
@@ -30,33 +24,59 @@ With the variable absent, the upstream SetVSync implementation is used unchanged
 +// physics stays on its own real-time-synchronised thread.
 +class G1GlfwAdapter : public mujoco::GlfwAdapter
 +{
++  using Clock = std::chrono::steady_clock;
++
 +public:
 +  void SetVSync(bool enabled) override
 +  {
++    // Keep GLFW's well-tested interval at 0 or 1. Larger intervals produced stale/corrupt
++    // compositor buffers with NVIDIA GLX on X11, including pixels from windows behind MuJoCo.
++    mujoco::GlfwAdapter::SetVSync(enabled);
++
++    frame_period_ = Clock::duration::zero();
++    last_swap_ = Clock::time_point{};
 +    const char *target_text = std::getenv("GROVE_G1_VIEWER_FPS");
 +    char *end = nullptr;
 +    const long target_fps = target_text ? std::strtol(target_text, &end, 10) : 0;
 +    if (enabled && target_text && end != target_text && *end == '\0' && target_fps > 0)
 +    {
-+      GLFWmonitor *monitor = glfwGetPrimaryMonitor();
-+      const GLFWvidmode *mode = monitor ? glfwGetVideoMode(monitor) : nullptr;
-+      const int refresh_hz = mode && mode->refreshRate > 0 ? mode->refreshRate : 60;
-+      const int interval = std::max(1, (refresh_hz + static_cast<int>(target_fps) - 1) /
-+                                           static_cast<int>(target_fps));
-+      glfwSwapInterval(interval);
++      frame_period_ = std::chrono::duration_cast<Clock::duration>(
++          std::chrono::duration<double>(1.0 / static_cast<double>(target_fps)));
 +      std::fprintf(stderr,
-+                   "[grove_g1] viewer capped near %ld FPS (%d Hz display, swap interval %d)\n",
-+                   target_fps, refresh_hz, interval);
++                   "[grove_g1] viewer paced at %ld FPS with normal VSync + render timer\n",
++                   target_fps);
++    }
++  }
++
++  void SwapBuffers() override
++  {
++    mujoco::GlfwAdapter::SwapBuffers();
++    if (frame_period_ == Clock::duration::zero())
++    {
 +      return;
 +    }
-+    mujoco::GlfwAdapter::SetVSync(enabled);
++
++    const auto now = Clock::now();
++    if (last_swap_ != Clock::time_point{})
++    {
++      const auto deadline = last_swap_ + frame_period_;
++      if (now < deadline)
++      {
++        std::this_thread::sleep_until(deadline);
++      }
++    }
++    last_swap_ = Clock::now();
 +  }
++
++private:
++  Clock::duration frame_period_ = Clock::duration::zero();
++  Clock::time_point last_swap_{};
 +};
 +
  extern "C"
  {
  #if defined(_WIN32) || defined(__CYGWIN__)
-@@ -698,7 +728,7 @@ int main(int argc, char **argv)
+@@ -698,7 +751,7 @@ int main(int argc, char **argv)
  
    // simulate object encapsulates the UI
    auto sim = std::make_unique<mj::Simulate>(

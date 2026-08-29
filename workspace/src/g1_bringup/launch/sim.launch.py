@@ -359,13 +359,29 @@ def _launch_setup(context, *args, **kwargs):
             "MuJoCo state, simulation only) or 'fast_lio' (LiDAR-inertial, what the robot runs)."
         )
 
-    sim_env = dict(os.environ)
-    sim_env["LD_LIBRARY_PATH"] = UNITREE_ROBOTICS_LIB + ":" + sim_env.get("LD_LIBRARY_PATH", "")
+    process_env = dict(os.environ)
+    process_env["LD_LIBRARY_PATH"] = (
+        UNITREE_ROBOTICS_LIB + ":" + process_env.get("LD_LIBRARY_PATH", "")
+    )
 
     actions = []
     if sensors:
-        actions += _sensor_nodes(sim_env, _flag(context, "rviz"))
+        actions += _sensor_nodes(process_env, _flag(context, "rviz"))
         actions += _odometry_actions(odometry, sim_start_delay_s)
+
+    # Copy after _sensor_nodes has added GROVE_G1_SENSOR_CONFIG. Keep RViz on the discrete
+    # NVIDIA GPU while allowing MuJoCo's older GLFW/GLX path to use Mesa on a hybrid laptop.
+    # NVIDIA PRIME can otherwise present an unpainted/stale MuJoCo window even though rendering
+    # and physics continue normally in the process.
+    sim_env = dict(process_env)
+    mujoco_glx_vendor = os.environ.get("G1_MUJOCO_GLX_VENDOR_LIBRARY_NAME")
+    mujoco_dri_prime = os.environ.get("G1_MUJOCO_DRI_PRIME")
+    if mujoco_glx_vendor:
+        sim_env["__GLX_VENDOR_LIBRARY_NAME"] = mujoco_glx_vendor
+        sim_env.pop("__NV_PRIME_RENDER_OFFLOAD", None)
+        sim_env.pop("__VK_LAYER_NV_optimus", None)
+    if mujoco_dri_prime:
+        sim_env["DRI_PRIME"] = mujoco_dri_prime
 
     actions.append(_cleanup_on_shutdown(_stage_scene(world, sensors, pin_pelvis)))
     actions += _simulator(sim_env, headless, sim_start_delay_s)
